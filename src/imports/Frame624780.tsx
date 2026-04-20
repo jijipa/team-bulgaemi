@@ -1,0 +1,420 @@
+import svgPaths from "./svg-07vp8nmq17";
+
+function IconArrowRight() {
+  return (
+    <div className="relative size-[24px]" data-name="icon_arrow_right 1">
+      <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 24 24">
+        <g id="icon_arrow_right 1">
+          <path d={svgPaths.p208b6880} id="í©ì¹ê¸° 4" stroke="var(--stroke-0, #242B35)" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+        </g>
+      </svg>
+    </div>
+  );
+}
+
+function BtnMoreMatch() {
+  return (
+    <div className="-translate-y-1/2 absolute content-stretch flex items-center justify-center right-[8px] size-[40px] top-[calc(50%+8px)]" data-name="btn-more match">
+      <div className="flex items-center justify-center relative shrink-0">
+        <div className="flex-none rotate-180">
+          <IconArrowRight />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Frame() {
+  return (
+    <div className="absolute bg-white h-[56px] left-0 top-0 w-[393px]">
+      <BtnMoreMatch />
+    </div>
+  );
+}
+
+function Frame12() {
+  return (
+    <div className="relative shrink-0 w-full">
+      <div className="flex flex-row items-center size-full">
+        <div className="content-stretch flex items-center px-[20px] relative w-full">
+          <div className="font-['Pretendard:Bold',sans-serif] leading-[32px] not-italic relative shrink-0 text-[#242b35] text-[24px] tracking-[-0.48px] w-[168px] whitespace-pre-wrap">
+            <p className="mb-0">득점한 플레이어를</p>
+            <p>선택해주세요</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Group() {
+  return (
+    <div className="absolute inset-[6.25%_4.21%_6.25%_4.17%]" data-name="Group">
+      <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 58.64 56">
+        <g id="Group">
+          <path d={svgPaths.p1257a430} fill="var(--fill-0, #242B35)" id="Vector" />
+        </g>
+      </svg>
+    </div>
+  );
+}
+
+function IconNumber() {
+  return (
+    <div className="overflow-clip relative shrink-0 size-[64px]" data-name="icon-number">
+      <Group />
+      <p className="absolute font-['Anton:Regular',sans-serif] inset-[18.75%_38.28%_18.75%_39.84%] leading-[40px] not-italic text-[#f2f2f2] text-[28px] text-center tracking-[0.28px]">3</p>
+    </div>
+  );
+}
+
+function Frame1() {
+  return (
+    <div className="bg-[#f2f2f2] flex-[1_0_0] min-h-px min-w-[90px] relative rounded-[12px]">
+      <div className="flex flex-col items-center min-w-[inherit] size-full">
+        <div className="content-stretch flex flex-col gap-[4px] items-center min-w-[inherit] px-[2px] py-[8px] relative w-full">
+          <IconNumber />
+          <p className="font-['Pretendard:SemiBold',sans-serif] leading-[normal] min-w-full not-italic relative shrink-0 text-[#1a1a1c] text-[16px] text-center w-[min-content] whitespace-pre-wrap">이찬호</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Group1() {
+  return (
+    <div className="absolute inset-[6.25%_4.21%_6.25%_4.17%]" data-name="Group">
+      <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 58.64 56">
+        <g id="Group">
+          <path d={svgPaths.p1257a430} fill="var(--fill-0, #242B35)" id="Vector" />
+        </g>
+      </svg>
+    </div>
+  );
+}
+
+function IconNumber1() {
+  return (
+    <div className="overflow-clip relative shrink-0 size-[64px]" data-name="icon-number">
+      <Group1 />
+      <p className="absolute font-['Anton:Regular',sans-serif] inset-[18.75%_38.28%_18.75%_39.84%] leading-[40px] not-italic text-[#f2f2f2] text-[28px] text-center tracking-[0.28px]">4</p>
+    </div>
+  );
+}
+
+function Frame2() {
+  return (
+    <div className="bg-[#f2f2f2] flex-[1_0_0] min-h-px min-w-[90px] relative rounded-[12px]">
+      <div className="flex flex-col items-center min-w-[inherit] size-full">
+        <div className="content-stretch flex flex-col gap-[4px] items-center min-w-[inherit] px-[2px] py-[8px] relative w-full">
+          <IconNumber1 />
+          <p className="font-['Pretendard:SemiBold',sans-serif] leading-[normal] min-w-full not-italic relative shrink-0 text-[#1a1a1c] text-[16px] text-center w-[min-content] whitespace-pre-wrap">정이삭</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Group2() {
+  return (
+    <div className="absolute inset-[6.25%_4.21%_6.25%_4.17%]" data-name="Group">
+      <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 58.64 56">
+        <g id="Group">
+          <path d={svgPaths.p1257a430} fill="var(--fill-0, #242B35)" id="Vector" />
+        </g>
+      </svg>
+    </div>
+  );
+}
+
+function IconNumber2() {
+  return (
+    <div className="overflow-clip relative shrink-0 size-[64px]" data-name="icon-number">
+      <Group2 />
+      <p className="absolute font-['Anton:Regular',sans-serif] inset-[18.75%_38.28%_18.75%_39.84%] leading-[40px] not-italic text-[#f2f2f2] text-[28px] text-center tracking-[0.28px]">4</p>
+    </div>
+  );
+}
+
+function Frame4() {
+  return (
+    <div className="bg-[#f2f2f2] flex-[1_0_0] min-h-px min-w-[90px] relative rounded-[12px]">
+      <div className="flex flex-col items-center min-w-[inherit] size-full">
+        <div className="content-stretch flex flex-col gap-[4px] items-center min-w-[inherit] px-[2px] py-[8px] relative w-full">
+          <IconNumber2 />
+          <p className="font-['Pretendard:SemiBold',sans-serif] leading-[normal] min-w-full not-italic relative shrink-0 text-[#1a1a1c] text-[16px] text-center w-[min-content] whitespace-pre-wrap">김동범</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Group3() {
+  return (
+    <div className="absolute inset-[6.25%_4.21%_6.25%_4.17%]" data-name="Group">
+      <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 58.64 56">
+        <g id="Group">
+          <path d={svgPaths.p1257a430} fill="var(--fill-0, #242B35)" id="Vector" />
+        </g>
+      </svg>
+    </div>
+  );
+}
+
+function IconNumber3() {
+  return (
+    <div className="overflow-clip relative shrink-0 size-[64px]" data-name="icon-number">
+      <Group3 />
+      <p className="absolute font-['Anton:Regular',sans-serif] inset-[18.75%_30.47%_18.75%_32.03%] leading-[40px] not-italic text-[#f2f2f2] text-[28px] text-center tracking-[0.28px]">21</p>
+    </div>
+  );
+}
+
+function Frame8() {
+  return (
+    <div className="bg-[#f2f2f2] flex-[1_0_0] min-h-px min-w-[90px] relative rounded-[12px]">
+      <div className="flex flex-col items-center min-w-[inherit] size-full">
+        <div className="content-stretch flex flex-col gap-[4px] items-center min-w-[inherit] px-[2px] py-[8px] relative w-full">
+          <IconNumber3 />
+          <p className="font-['Pretendard:SemiBold',sans-serif] leading-[normal] min-w-full not-italic relative shrink-0 text-[#1a1a1c] text-[16px] text-center w-[min-content] whitespace-pre-wrap">김민겸</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Layer() {
+  return (
+    <div className="relative shrink-0 size-[64px]" data-name="Layer_1">
+      <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 64 64">
+        <g clipPath="url(#clip0_4007_142)" id="Layer_1">
+          <path d={svgPaths.pdf75580} fill="var(--fill-0, #6E7783)" id="Vector" />
+          <path d={svgPaths.p331cb500} fill="url(#paint0_linear_4007_142)" id="Vector_2" />
+          <path d={svgPaths.p38ff1d00} fill="var(--fill-0, #CECECE)" id="Vector_3" />
+          <path d={svgPaths.p12074800} fill="var(--fill-0, #CECECE)" id="Vector_4" />
+          <g id="Group">
+            <path d={svgPaths.p942ee00} fill="var(--fill-0, #6E7783)" id="Vector_5" />
+            <path d={svgPaths.p1bf81640} fill="var(--fill-0, #CECECE)" id="Vector_6" />
+          </g>
+          <path d={svgPaths.p3aa5cf40} fill="var(--fill-0, #6E7783)" id="Vector_7" />
+          <path d={svgPaths.p12074800} fill="var(--fill-0, #CECECE)" id="Vector_8" />
+          <g id="Vector_9" />
+        </g>
+        <defs>
+          <linearGradient gradientUnits="userSpaceOnUse" id="paint0_linear_4007_142" x1="31.9867" x2="31.9867" y1="4.78646" y2="59.9998">
+            <stop stopColor="#F7EE43" />
+            <stop offset="1" stopColor="#FCB900" />
+          </linearGradient>
+          <clipPath id="clip0_4007_142">
+            <rect fill="white" height="64" width="64" />
+          </clipPath>
+        </defs>
+      </svg>
+    </div>
+  );
+}
+
+function Frame5() {
+  return (
+    <div className="bg-[#f2f2f2] flex-[1_0_0] min-h-px min-w-[90px] relative rounded-[12px]">
+      <div className="flex flex-col items-center min-w-[inherit] size-full">
+        <div className="content-stretch flex flex-col gap-[4px] items-center min-w-[inherit] px-[2px] py-[8px] relative w-full">
+          <Layer />
+          <p className="font-['Pretendard:SemiBold',sans-serif] leading-[normal] min-w-full not-italic relative shrink-0 text-[#1a1a1c] text-[16px] text-center w-[min-content] whitespace-pre-wrap">용병1</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Layer1() {
+  return (
+    <div className="relative shrink-0 size-[64px]" data-name="Layer_1">
+      <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 64 64">
+        <g clipPath="url(#clip0_4007_142)" id="Layer_1">
+          <path d={svgPaths.pdf75580} fill="var(--fill-0, #6E7783)" id="Vector" />
+          <path d={svgPaths.p331cb500} fill="url(#paint0_linear_4007_142)" id="Vector_2" />
+          <path d={svgPaths.p38ff1d00} fill="var(--fill-0, #CECECE)" id="Vector_3" />
+          <path d={svgPaths.p12074800} fill="var(--fill-0, #CECECE)" id="Vector_4" />
+          <g id="Group">
+            <path d={svgPaths.p942ee00} fill="var(--fill-0, #6E7783)" id="Vector_5" />
+            <path d={svgPaths.p1bf81640} fill="var(--fill-0, #CECECE)" id="Vector_6" />
+          </g>
+          <path d={svgPaths.p3aa5cf40} fill="var(--fill-0, #6E7783)" id="Vector_7" />
+          <path d={svgPaths.p12074800} fill="var(--fill-0, #CECECE)" id="Vector_8" />
+          <g id="Vector_9" />
+        </g>
+        <defs>
+          <linearGradient gradientUnits="userSpaceOnUse" id="paint0_linear_4007_142" x1="31.9867" x2="31.9867" y1="4.78646" y2="59.9998">
+            <stop stopColor="#F7EE43" />
+            <stop offset="1" stopColor="#FCB900" />
+          </linearGradient>
+          <clipPath id="clip0_4007_142">
+            <rect fill="white" height="64" width="64" />
+          </clipPath>
+        </defs>
+      </svg>
+    </div>
+  );
+}
+
+function Frame9() {
+  return (
+    <div className="bg-[#f2f2f2] flex-[1_0_0] min-h-px min-w-[90px] relative rounded-[12px]">
+      <div className="flex flex-col items-center min-w-[inherit] size-full">
+        <div className="content-stretch flex flex-col gap-[4px] items-center min-w-[inherit] px-[2px] py-[8px] relative w-full">
+          <Layer1 />
+          <p className="font-['Pretendard:SemiBold',sans-serif] leading-[normal] min-w-full not-italic relative shrink-0 text-[#1a1a1c] text-[16px] text-center w-[min-content] whitespace-pre-wrap">용병2</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Group4() {
+  return (
+    <div className="absolute inset-[6.25%_4.21%_6.25%_4.17%]" data-name="Group">
+      <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 58.64 56">
+        <g id="Group">
+          <path d={svgPaths.p1257a430} fill="var(--fill-0, #242B35)" id="Vector" />
+        </g>
+      </svg>
+    </div>
+  );
+}
+
+function IconNumber4() {
+  return (
+    <div className="overflow-clip relative shrink-0 size-[64px]" data-name="icon-number">
+      <Group4 />
+      <p className="absolute font-['Anton:Regular',sans-serif] inset-[18.75%_28.91%_18.75%_27.34%] leading-[40px] not-italic text-[#f2f2f2] text-[28px] text-center tracking-[0.28px]">34</p>
+    </div>
+  );
+}
+
+function Frame6() {
+  return (
+    <div className="bg-[#f2f2f2] flex-[1_0_0] min-h-px min-w-[90px] relative rounded-[12px]">
+      <div className="flex flex-col items-center min-w-[inherit] size-full">
+        <div className="content-stretch flex flex-col gap-[4px] items-center min-w-[inherit] px-[2px] py-[8px] relative w-full">
+          <IconNumber4 />
+          <p className="font-['Pretendard:SemiBold',sans-serif] leading-[normal] min-w-full not-italic relative shrink-0 text-[#1a1a1c] text-[16px] text-center w-[min-content] whitespace-pre-wrap">강석민</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Group5() {
+  return (
+    <div className="absolute inset-[6.25%_4.21%_6.25%_4.17%]" data-name="Group">
+      <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 58.64 56">
+        <g id="Group">
+          <path d={svgPaths.p1257a430} fill="var(--fill-0, #242B35)" id="Vector" />
+        </g>
+      </svg>
+    </div>
+  );
+}
+
+function IconNumber5() {
+  return (
+    <div className="overflow-clip relative shrink-0 size-[64px]" data-name="icon-number">
+      <Group5 />
+      <p className="absolute font-['Anton:Regular',sans-serif] inset-[18.75%_27.34%_18.75%_28.91%] leading-[40px] not-italic text-[#f2f2f2] text-[28px] text-center tracking-[0.28px]">63</p>
+    </div>
+  );
+}
+
+function Frame7() {
+  return (
+    <div className="bg-[#f2f2f2] flex-[1_0_0] min-h-px min-w-[90px] relative rounded-[12px]">
+      <div className="flex flex-col items-center min-w-[inherit] size-full">
+        <div className="content-stretch flex flex-col gap-[4px] items-center min-w-[inherit] px-[2px] py-[8px] relative w-full">
+          <IconNumber5 />
+          <p className="font-['Pretendard:SemiBold',sans-serif] leading-[normal] min-w-full not-italic relative shrink-0 text-[#1a1a1c] text-[16px] text-center w-[min-content] whitespace-pre-wrap">김민수</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Score() {
+  return (
+    <div className="absolute inset-[20.17%_3.28%_17.19%_6.7%]" data-name="score1">
+      <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 57.6167 40.0938">
+        <g id="score1">
+          <path d={svgPaths.p16a5c700} fill="var(--fill-0, #6E7783)" id="Vector" />
+          <path d={svgPaths.p2c03a500} fill="var(--fill-0, #6E7783)" id="Vector_2" />
+          <path d={svgPaths.p1496cf0} fill="var(--fill-0, #6E7783)" id="Vector_3" />
+          <path d={svgPaths.p24ae41c0} fill="var(--fill-0, #6E7783)" id="Vector_4" />
+        </g>
+      </svg>
+    </div>
+  );
+}
+
+function IconNumber6() {
+  return (
+    <div className="overflow-clip relative shrink-0 size-[64px]" data-name="icon-number">
+      <Score />
+    </div>
+  );
+}
+
+function Frame10() {
+  return (
+    <div className="bg-[#f2f2f2] flex-[1_0_0] min-h-px min-w-[90px] relative rounded-[12px]">
+      <div className="flex flex-col items-center min-w-[inherit] size-full">
+        <div className="content-stretch flex flex-col gap-[4px] items-center min-w-[inherit] px-[2px] py-[8px] relative w-full">
+          <IconNumber6 />
+          <p className="font-['Pretendard:SemiBold',sans-serif] leading-[normal] min-w-full not-italic relative shrink-0 text-[#1a1a1c] text-[16px] text-center w-[min-content] whitespace-pre-wrap">자책골</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Frame13() {
+  return (
+    <div className="content-center flex flex-wrap gap-[4px] items-center relative shrink-0 w-full">
+      <Frame1 />
+      <Frame2 />
+      <Frame4 />
+      <Frame8 />
+      <Frame5 />
+      <Frame9 />
+      <Frame6 />
+      <Frame7 />
+      <Frame10 />
+    </div>
+  );
+}
+
+function Frame3() {
+  return (
+    <div className="relative shrink-0 w-full">
+      <div className="content-stretch flex flex-col items-start px-[20px] relative w-full">
+        <Frame13 />
+      </div>
+    </div>
+  );
+}
+
+function Frame11() {
+  return (
+    <div className="content-stretch flex flex-col items-start relative shrink-0 w-full">
+      <Frame3 />
+    </div>
+  );
+}
+
+export default function Frame14() {
+  return (
+    <div className="bg-white content-stretch flex flex-col gap-[24px] items-start overflow-clip pt-[56px] relative rounded-tl-[20px] rounded-tr-[20px] size-full">
+      <Frame />
+      <Frame12 />
+      <Frame11 />
+    </div>
+  );
+}
