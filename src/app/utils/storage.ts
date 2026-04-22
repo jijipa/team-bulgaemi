@@ -83,6 +83,11 @@ export const deleteMatch = (matchId: string): void => {
   const goalEvents = getGoalEvents();
   const filteredGoalEvents = goalEvents.filter((e) => e.matchId !== matchId);
   saveGoalEvents(filteredGoalEvents);
+
+  // 관련 MOM 데이터 삭제
+  const moms = getMOMs();
+  const filteredMoms = moms.filter((m) => m.matchId !== matchId);
+  saveMOMs(filteredMoms);
 };
 
 // ============= 득점 데이터 =============

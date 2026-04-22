@@ -1,15 +1,27 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Match } from "../types/data";
 import { useMatchData } from "../hooks/useMatchData";
-import { formatMatchDateWithDay } from "../utils/stats";
 import svgPaths from "../../imports/svg-pst6m3rsp2";
-import { fetchJSONP } from "../utils/jsonp";
-import html2canvas from "html2canvas";
-import MatchCardImage from "./MatchCardImage";
 import { motion, AnimatePresence } from "motion/react";
 import MatchActionsSheet from "./MatchActionsSheet";
 import { deleteMatch, getParticipants } from "../utils/storage";
 import MomSelectionModal from "./MomSelectionModal";
+import { isSupabaseConfigured } from "../lib/supabase";
+import {
+  deleteMatchFromSupabase,
+  fetchMatchesFromSupabase,
+} from "../services/supabaseMatches";
+import {
+  fetchAppDataFromSupabase,
+  saveMomToSupabase,
+} from "../services/supabaseAppData";
+import {
+  saveGoalEvents,
+  saveMOMs,
+  saveMatches,
+  saveParticipants,
+  saveScores,
+} from "../utils/storage";
 
 // 매치 데이터 타입
 export interface MatchListItem {
@@ -29,10 +41,9 @@ interface MatchListScreenProps {
   onScoreMatch: (matchId: string) => void; // 스코어 버튼 클릭 핸들러
   onEditScore: (matchId: string) => void; // ✅ 스코어 수정 핸들러 추가
   onMomSaved?: () => void; // ✅ MOM 저장 완료 콜백 
-  googleScriptUrl: string; // Google Apps Script URL 추가
 }
 
-export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEditScore, onMomSaved, googleScriptUrl }: MatchListScreenProps) {
+export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEditScore, onMomSaved }: MatchListScreenProps) {
   // 실제 데이터 로드
   const { matches: realMatches, refreshData } = useMatchData();
   const [isRefreshing, setIsRefreshing] = useState(true);
@@ -60,10 +71,6 @@ export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEd
   // ✅ MOM 데이터 상태 추가
   const [momsData, setMomsData] = useState<any[]>([]);
   
-  // 이미지 생성을 위한 ref
-  const matchCardRef = useRef<HTMLDivElement>(null);
-  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
-
   // 스켈레톤 컴포넌트
   const MonthSkeleton = () => (
     <div className="content-stretch flex flex-col gap-[8px] items-center relative shrink-0 w-full">
@@ -111,67 +118,27 @@ export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEd
     </div>
   );
 
-  // 컴포넌트 마운트 시 구글 시트에서 최신 데이터 로드
+  // 컴포넌트 마운트 시 Supabase에서 최신 매치 데이터 로드
   useEffect(() => {
-    const loadDataFromGoogleSheets = async () => {
+    const loadData = async () => {
       setIsRefreshing(true);
       try {
-        console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        console.log("📊 [MatchListScreen] Google Sheets에서 데이터 로드 중...");
-        console.log("🔗 URL:", googleScriptUrl);
-        console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-
-        // JSONP 방식으로 Matches, Scores, Participants, MOMs 데이터 병렬 로드
-        const [matchesData, scoresData, participantsData, momsData] = await Promise.all([
-          fetchJSONP<{ success: boolean; matches: any[] }>(
-            `${googleScriptUrl}?action=getMatches`
-          ),
-          fetchJSONP<{ success: boolean; scores: any[] }>(
-            `${googleScriptUrl}?action=getScores`
-          ).catch(() => ({ success: false, scores: [] })),
-          // ✅ Participants 데이터 추가
-          fetchJSONP<{ success: boolean; participants: any[] }>(
-            `${googleScriptUrl}?action=getParticipants`
-          ).catch(() => ({ success: false, participants: [] })),
-          // ✅ MOMs 데이터 추가
-          fetchJSONP<{ success: boolean; moms: any[] }>(
-            `${googleScriptUrl}?action=getMOMs`
-          ).catch(() => ({ success: false, moms: [] })),
-        ]);
-
-        console.log("✅ [MatchListScreen] Matches 로드 완료:", matchesData);
-        console.log("✅ [MatchListScreen] Scores 로드 완료:", scoresData);
-        console.log("✅ [MatchListScreen] Participants 로드 완료:", participantsData); // ✅ Participants 로그
-        console.log("✅ [MatchListScreen] MOMs 로드 완료:", momsData); // ✅ MOM 로그
-
-        // LocalStorage에 저장
-        if (matchesData.success && matchesData.matches) {
-          localStorage.setItem("soccer_matches", JSON.stringify(matchesData.matches));
-          console.log("✅ [MatchListScreen] Matches LocalStorage 저장 완료");
+        if (!isSupabaseConfigured) {
+          console.warn("⚠️ [MatchListScreen] Supabase 설정이 없어 로컬 캐시만 표시합니다.");
+          refreshData();
+          return;
         }
 
-        if (scoresData.success && scoresData.scores) {
-          localStorage.setItem("soccer_scores", JSON.stringify(scoresData.scores));
-          console.log("✅ [MatchListScreen] Scores LocalStorage 저장 완료");
-        }
-
-        // ✅ Participants LocalStorage 저장
-        if (participantsData.success && participantsData.participants) {
-          localStorage.setItem("soccer_participants", JSON.stringify(participantsData.participants));
-          console.log("✅ [MatchListScreen] Participants LocalStorage 저장 완료");
-        }
-
-        // ✅ MOMs LocalStorage 저장
-        if (momsData.success && momsData.moms) {
-          localStorage.setItem("soccer_moms", JSON.stringify(momsData.moms));
-          setMomsData(momsData.moms); // ✅ 상태에도 저장
-          console.log("✅ [MatchListScreen] MOMs LocalStorage 저장 완료");
-        }
-
-        // 데이터 새로고침
+        const matches = await fetchMatchesFromSupabase();
+        const appData = await fetchAppDataFromSupabase(matches);
+        saveMatches(appData.matches);
+        saveScores(appData.scores);
+        saveParticipants(appData.participants);
+        saveMOMs(appData.moms);
+        saveGoalEvents(appData.goalEvents);
+        setMomsData(appData.moms);
         refreshData();
-
-        console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        console.log("✅ [MatchListScreen] Supabase Matches 로드 완료:", matches.length);
       } catch (error) {
         console.error("❌ [MatchListScreen] 데이터 로드 실패:", error);
       } finally {
@@ -179,7 +146,7 @@ export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEd
       }
     };
 
-    loadDataFromGoogleSheets();
+    loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // 컴포넌트 마운트 시 한 번만 실행
 
@@ -202,7 +169,7 @@ export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEd
     const dateOnly = dateStr.split("T")[0]; // ISO 형식 대비 T 앞부분만 사용
     const [year, month, day] = dateOnly.split("-").map(Number);
     const date = new Date(year, month - 1, day); // 로컬 시간대로 생성
-    const days = ["일", "월", "", "수", "목", "금", "토"];
+    const days = ["일", "월", "화", "수", "목", "금", "토"];
     const dayOfWeek = days[date.getDay()];
 
     // 경기 결과 계산
@@ -292,41 +259,6 @@ export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEd
     }
   };
 
-  // 이미지 저장 함
-  const handleSaveImage = async () => {
-    if (!selectedMatchId || !matchCardRef.current) return;
-
-    setIsGeneratingImage(true);
-    try {
-      const canvas = await html2canvas(matchCardRef.current, {
-        backgroundColor: null,
-        scale: 2, // 고해상도
-      });
-
-      // 이미지 다운로드
-      const link = document.createElement("a");
-      const selectedMatch = realMatches.find(m => m.id === selectedMatchId);
-      const fileName = selectedMatch 
-        ? `팀불개미_vs_${selectedMatch.opponentName}_${selectedMatch.matchDate}.png`
-        : `match_${selectedMatchId}.png`;
-      
-      link.download = fileName;
-      link.href = canvas.toDataURL("image/png");
-      link.click();
-
-      setShowMoreMenu(false);
-      setSelectedMatchId(null);
-    } catch (error) {
-      console.error("이미지 저장 실패:", error);
-      alert("이미지 저장에 실패했습니다.");
-    } finally {
-      setIsGeneratingImage(false);
-    }
-  };
-
-  // 선택된 매치 데이터 가져오기
-  const selectedMatch = selectedMatchId ? realMatches.find(m => m.id === selectedMatchId) : null;
-
   // 매치 삭제 핸들러
   const handleDeleteMatch = async () => {
     if (!selectedMatchId) return;
@@ -343,20 +275,10 @@ export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEd
       deleteMatch(selectedMatchId);
       console.log("✅ 로컬 스토리지에서 삭제 완료");
 
-      // Google Sheets에 삭제 요청 (JSON 형식으로 변경)
-      const response = await fetch(googleScriptUrl, {
-        method: "POST",
-        mode: "no-cors",
-        headers: {
-          "Content-Type": "text/plain;charset=utf-8",
-        },
-        body: JSON.stringify({
-          action: "deleteMatch",
-          data: JSON.stringify({ matchId: selectedMatchId }),
-        }),
-      });
-      
-      console.log("✅ Google Sheets 삭제 요청 완료 (no-cors 모드)");
+      if (isSupabaseConfigured) {
+        await deleteMatchFromSupabase(selectedMatchId);
+      }
+      console.log("✅ Supabase 삭제 완료");
       
       // UI 업데이트
       setShowMoreMenu(false);
@@ -417,9 +339,9 @@ export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEd
   };
 
   return (
-    <div className="bg-white relative size-full">
+    <div className="fixed inset-0 z-30 bg-white h-screen min-h-screen w-full overflow-hidden">
       {/* Header */}
-      <div className="absolute h-[48px] left-0 right-0 top-[24px]">
+      <div className="absolute h-[48px] left-0 right-0 top-[24px] z-10">
         <button
           onClick={onBack}
           className="absolute content-stretch flex items-center justify-center left-[8px] size-[40px] top-1/2 -translate-y-1/2"
@@ -442,9 +364,25 @@ export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEd
       </div>
 
       {/* Match List */}
-      <div className="absolute content-stretch flex flex-col gap-[48px] items-start left-0 top-[96px] w-full pb-[180px] overflow-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+      <div className="absolute bottom-[116px] content-stretch flex flex-col gap-[48px] items-start left-0 right-0 top-[96px] w-full overflow-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         {isRefreshing ? (
           <MonthSkeleton />
+        ) : sortedMonths.length === 0 ? (
+          <div className="content-stretch flex flex-col gap-[12px] items-center justify-center min-h-[360px] px-[20px] relative shrink-0 w-full">
+            <p
+              className="leading-[normal] not-italic text-[#242b35] text-[22px] text-center"
+              style={{ fontFamily: "var(--font-paperlogy)", fontWeight: 700 }}
+            >
+              아직 등록된 매치가 없어요
+            </p>
+            <p
+              className="leading-[22px] not-italic text-[#82828f] text-[15px] text-center whitespace-pre-wrap"
+              style={{ fontFamily: "var(--font-pretendard)", fontWeight: 500 }}
+            >
+              아래의 매치 추가 버튼으로 첫 경기를 등록하면{"\n"}
+              Supabase에 저장되고 이 목록에 표시됩니다.
+            </p>
+          </div>
         ) : (
           sortedMonths.map((month) => (
             <div key={month} className="content-stretch flex flex-col gap-[8px] items-center relative shrink-0 w-full">
@@ -549,7 +487,7 @@ export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEd
       </div>
 
       {/* Add Match Button */}
-      <div className="fixed backdrop-blur-[2.5px] bg-[rgba(255,255,255,0.5)] bottom-0 left-0 right-0 content-stretch flex flex-col items-start pb-[48px] pt-[16px] px-[20px] border-t border-[rgba(255,255,255,0.5)]">
+      <div className="fixed backdrop-blur-[2.5px] bg-[rgba(255,255,255,0.5)] bottom-0 left-0 right-0 z-20 content-stretch flex flex-col items-start pb-[48px] pt-[16px] px-[20px] border-t border-[rgba(255,255,255,0.5)]">
         <button
           onClick={onAddMatch}
           className="bg-[#242b35] content-stretch flex gap-[8px] items-center justify-center not-italic p-[10px] relative rounded-[8px] w-full h-[52px] text-[18px]"
@@ -563,6 +501,8 @@ export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEd
       {/* More Menu - Match Actions Sheet */}
       <AnimatePresence>
         {showMoreMenu && selectedMatchId && (() => {
+          const selectedMatch = matches.find((match) => match.id === selectedMatchId);
+          const canSelectMom = selectedMatch?.status === "completed";
           // ✅ 해당 매치의 MOM 존재 여부 확인
           const hasMomRecord = momsData.some((mom: any) => 
             (mom["matchId"] === selectedMatchId) || (mom["경기ID"] === selectedMatchId)
@@ -579,6 +519,7 @@ export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEd
               onEdit={handleEditMatch}
               onMOM={handleMOMSelect}
               hasMom={hasMomRecord}
+              canSelectMom={canSelectMom}
             />
           );
         })()}
@@ -604,23 +545,8 @@ export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEd
               console.log("  - Match ID:", momMatchData.matchId);
               console.log("  - 선수 IDs:", selectedPlayerIds);
               
-              // Google Sheets에 MOM 저장
-              const response = await fetch(googleScriptUrl, {
-                method: "POST",
-                mode: "no-cors",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  action: "saveMOM",
-                  data: JSON.stringify({
-                    matchId: momMatchData.matchId,
-                    playerIds: selectedPlayerIds,
-                  }),
-                }),
-              });
-
-              console.log("✅ MOM 저장 요청 완료 (no-cors 모드)");
+              await saveMomToSupabase(momMatchData.matchId, selectedPlayerIds);
+              console.log("✅ MOM Supabase 저장 완료");
               console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
               // 데이터 새로고침
@@ -639,24 +565,6 @@ export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEd
             }
           }}
         />
-      )}
-
-      {/* Hidden Match Card for Image Generation */}
-      {selectedMatch && selectedMatch.isCompleted && (
-        <div
-          ref={matchCardRef}
-          className="fixed -left-[9999px] -top-[9999px]"
-          style={{ width: "216px", height: "324px" }}
-        >
-          <MatchCardImage
-            date={formatMatchDateWithDay(selectedMatch.matchDate)}
-            ourScore={selectedMatch.ourScore || 0}
-            opponentScore={selectedMatch.opponentScore || 0}
-            opponentName={selectedMatch.opponentName}
-            scorers={selectedMatch.scorers || []}
-            imageUrl={selectedMatch.imageUrl || "https://images.unsplash.com/photo-1579952363873-27f3bade9f55?w=400"}
-          />
-        </div>
       )}
     </div>
   );

@@ -79,7 +79,7 @@ export default function MatchRegistrationStep1({ onNext, onBack, onClose }: Matc
   const isFormValid = matchType && playerCount && quarterCount && quarterTime;
 
   return (
-    <div className="bg-white relative size-full">
+    <div className="bg-white relative h-screen min-h-screen w-full overflow-hidden">
       {/* Progress Indicator */}
       <div className="absolute h-[20px] left-[20px] top-[72px] w-[83.993px]">
         <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 83.9927 20.0001">

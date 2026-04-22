@@ -6,9 +6,17 @@ interface MatchActionsSheetProps {
   onEdit: () => void;
   onMOM: () => void;
   hasMom?: boolean;
+  canSelectMom?: boolean;
 }
 
-export default function MatchActionsSheet({ onClose, onDelete, onEdit, onMOM, hasMom }: MatchActionsSheetProps) {
+export default function MatchActionsSheet({
+  onClose,
+  onDelete,
+  onEdit,
+  onMOM,
+  hasMom,
+  canSelectMom = true,
+}: MatchActionsSheetProps) {
   return (
     <>
       {/* Backdrop */}
@@ -54,19 +62,20 @@ export default function MatchActionsSheet({ onClose, onDelete, onEdit, onMOM, ha
           </button>
 
           {/* MOM 선정/수정 */}
-          <button
-            onClick={onMOM}
-            className="relative shrink-0 w-full hover:bg-gray-50 active:bg-gray-100 transition-colors"
-          >
-            <div className="content-stretch flex items-start px-[20px] py-[16px] relative w-full">
-              <p className="font-semibold leading-[normal] not-italic relative shrink-0 text-[#1a1a1c] text-[18px] text-center" style={{ fontFamily: 'var(--font-pretendard)' }}>
-                {hasMom ? "MOM 수정" : "MOM 선정"}
-              </p>
-            </div>
-          </button>
+          {canSelectMom && (
+            <button
+              onClick={onMOM}
+              className="relative shrink-0 w-full hover:bg-gray-50 active:bg-gray-100 transition-colors"
+            >
+              <div className="content-stretch flex items-start px-[20px] py-[16px] relative w-full">
+                <p className="font-semibold leading-[normal] not-italic relative shrink-0 text-[#1a1a1c] text-[18px] text-center" style={{ fontFamily: 'var(--font-pretendard)' }}>
+                  {hasMom ? "MOM 수정" : "MOM 선정"}
+                </p>
+              </div>
+            </button>
+          )}
         </div>
       </motion.div>
     </>
   );
 }
-

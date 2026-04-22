@@ -180,7 +180,7 @@ export default function MatchRegistrationStep2({ onNext, onBack, onClose }: Matc
   const timeOptions = generateTimeOptions();
 
   return (
-    <div className="bg-white relative size-full overflow-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+    <div className="bg-white relative h-screen min-h-screen w-full overflow-hidden">
       {/* Progress Indicator */}
       <div className="absolute h-[20px] left-[20px] top-[72px] w-[83.993px]">
         <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 83.9927 20.0001">
@@ -211,7 +211,7 @@ export default function MatchRegistrationStep2({ onNext, onBack, onClose }: Matc
       </div>
 
       {/* Main Content */}
-      <div className="absolute content-stretch flex flex-col gap-[24px] items-start left-0 top-[112px] w-full pb-[180px] overflow-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+      <div className="absolute bottom-[116px] content-stretch flex flex-col gap-[24px] items-start left-0 right-0 top-[112px] w-full overflow-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         {/* Title */}
         <div className="content-stretch flex flex-col items-start pl-[20px] relative shrink-0">
           <p className="leading-[32px] not-italic relative shrink-0 text-[#242b35] text-[24px] tracking-[-0.48px]" style={{ fontFamily: 'var(--font-pretendard)', fontWeight: 700 }}>

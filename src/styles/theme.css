@@ -145,6 +145,35 @@ body {
   color: var(--color-foreground);
 }
 
+html,
+body,
+#root {
+  width: 100%;
+  min-height: 100%;
+}
+
+.h-screen {
+  height: 100vh;
+  height: 100dvh;
+}
+
+.min-h-screen {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.z-30 {
+  z-index: 30;
+}
+
+.bottom-\[116px\] {
+  bottom: 116px;
+}
+
+.pb-\[48px\] {
+  padding-bottom: 48px;
+}
+
 .sticky-top-0 {
   position: -webkit-sticky;
   position: sticky;

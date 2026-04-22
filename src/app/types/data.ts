@@ -34,9 +34,11 @@ export interface Score {
   matchId: string; // 어떤 경기인지
   playerId: string;
   playerName: string;
+  playerNumber?: string;
   goals: number; // 총 골 수
   assists: number; // 총 도움 수
   isMercenary?: boolean; // 용병 여부
+  isOpponentGoal?: boolean; // 상대팀 득점 여부
   quarterData?: QuarterScore[]; // 쿼터별 상세 기록 (선택사항)
 }
 
@@ -49,9 +51,10 @@ export type GoalType =
 // 선수 마스터 데이터
 export interface Player {
   id: string;
+  number?: string;
   name: string;
-  isMercenary: boolean; // 용병 여부
-  createdAt: string; // ISO 8601 형식
+  isMercenary?: boolean; // 용병 여부
+  createdAt?: string; // ISO 8601 형식
 }
 
 // 선수 통계 (계산된 데이터)

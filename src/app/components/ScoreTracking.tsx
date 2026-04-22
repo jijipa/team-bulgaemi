@@ -5,15 +5,23 @@ import { motion, AnimatePresence } from "motion/react";
 import ScorerSelectSheet from "./ScorerSelectSheet";
 import AssistSelectSheet from "./AssistSelectSheet";
 import {
-  generateId,
-  addScores,
+  getScores,
+  saveScores,
   updateMatch,
+  getMatchById,
   getParticipants,
   saveParticipants,
   replaceGoalEventsByMatchId,
+  getGoalEvents,
 } from "../utils/storage";
 import { Score, Participant, GoalEvent, GoalType } from "../types/data";
-import { fetchJSONP } from "../utils/jsonp";
+import { isSupabaseConfigured } from "../lib/supabase";
+import { updateMatchInSupabase } from "../services/supabaseMatches";
+import {
+  replaceGoalEventsForMatchInSupabase,
+  replaceParticipantsForMatchInSupabase,
+  replaceScoresForMatchInSupabase,
+} from "../services/supabaseAppData";
 
 interface Player {
   id: string;
@@ -32,7 +40,6 @@ interface ScoreTrackingProps {
   matchId: string | null; // 현재 득점 입력 중인 매치 ID
   isEditMode?: boolean; // ✅ 수정 모드 추가
   onBack: () => void;
-  googleScriptUrl: string;
   opponentName?: string; // 상대팀 이름
 }
 
@@ -44,20 +51,28 @@ interface QuarterScore {
 interface GoalRecord {
   id: string;
   quarter: number;
-  goalType: GoalType;
+  goalType?: GoalType;
   scorer: { name: string; isMercenary: boolean };
   assist: { name: string; isMercenary: boolean } | null;
   isOpponentGoal: boolean;
 }
 
-export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, isEditMode, onBack, googleScriptUrl, opponentName }: ScoreTrackingProps) {
+const DEFAULT_QUARTER_COUNT = 4;
+
+const parseQuarterCount = (quarterCount?: string): number => {
+  const parsed = Number.parseInt(quarterCount?.match(/\d+/)?.[0] || "", 10);
+  return [2, 4, 6, 8].includes(parsed) ? parsed : DEFAULT_QUARTER_COUNT;
+};
+
+const createEmptyQuarterScores = (count: number): QuarterScore[] =>
+  Array.from({ length: count }, () => ({ our: 0, opponent: 0 }));
+
+export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, isEditMode, onBack, opponentName }: ScoreTrackingProps) {
   const [currentQuarter, setCurrentQuarter] = useState(1);
-  const [quarterScores, setQuarterScores] = useState<QuarterScore[]>([
-    { our: 0, opponent: 0 },
-    { our: 0, opponent: 0 },
-    { our: 0, opponent: 0 },
-    { our: 0, opponent: 0 },
-  ]);
+  const [registeredQuarterCount, setRegisteredQuarterCount] = useState(DEFAULT_QUARTER_COUNT);
+  const [quarterScores, setQuarterScores] = useState<QuarterScore[]>(() =>
+    createEmptyQuarterScores(DEFAULT_QUARTER_COUNT),
+  );
   const [showScorerSheet, setShowScorerSheet] = useState(false);
   const [showAssistSheet, setShowAssistSheet] = useState(false);
   const [selectedScorer, setSelectedScorer] = useState<{ player: Player | Mercenary; isMercenary: boolean } | null>(null);
@@ -70,12 +85,26 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
   // ✅ 이전 용병 목록 추적
   const prevMercenariesRef = useRef<Mercenary[]>([]);
 
+  useEffect(() => {
+    const match = matchId ? getMatchById(matchId) : undefined;
+    const nextQuarterCount = parseQuarterCount(match?.quarterCount);
+
+    setRegisteredQuarterCount(nextQuarterCount);
+    setCurrentQuarter((quarter) => Math.min(quarter, nextQuarterCount));
+    setQuarterScores((scores) =>
+      Array.from(
+        { length: nextQuarterCount },
+        (_, index) => scores[index] || { our: 0, opponent: 0 },
+      ),
+    );
+  }, [matchId]);
+
   // ✅ 수정 모드일 때 기존 데이터 로드
   useEffect(() => {
-    if (isEditMode && matchId && googleScriptUrl) {
+    if (isEditMode && matchId) {
       loadExistingMatchData();
     }
-  }, [isEditMode, matchId, googleScriptUrl]);
+  }, [isEditMode, matchId]);
 
   // ✅ 선수/용병 변경 시 득점 기록 필터링 (더 확실한 방법)
   useEffect(() => {
@@ -186,12 +215,7 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
       });
 
       // 쿼터 스코어 재계산
-      const newQuarterScores: QuarterScore[] = [
-        { our: 0, opponent: 0 },
-        { our: 0, opponent: 0 },
-        { our: 0, opponent: 0 },
-        { our: 0, opponent: 0 },
-      ];
+      const newQuarterScores = createEmptyQuarterScores(registeredQuarterCount);
 
       updatedGoalRecords.forEach(record => {
         if (record.isOpponentGoal) {
@@ -218,355 +242,46 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
 
     setIsLoadingData(true);
     try {
-      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      console.log("📥 기존 매치 데이터 로드 중...");
-      console.log("Match ID:", matchId);
-      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-
-      // Google Sheets에서 Scores와 Matches 데이터 병렬 로드
-      const [scoresData, matchesData] = await Promise.all([
-        fetchJSONP<{ success: boolean; scores: any[] }>(
-          `${googleScriptUrl}?action=getScores`
-        ),
-        fetchJSONP<{ success: boolean; matches: any[] }>(
-          `${googleScriptUrl}?action=getMatches`
-        ),
-      ]);
-
-      // 해당 매치의 데이터 찾기
-      const currentMatch = matchesData.success 
-        ? matchesData.matches.find((m: any) => 
-            (m["경기ID"] === matchId) || (m["id"] === matchId)
-          )
-        : null;
-
-      console.log("📊 현재 매치 데이터:", currentMatch);
-
-      if (scoresData.success && scoresData.scores) {
-        // 해당 매치의 득점 데이터만 필터링
-        const matchScores = scoresData.scores.filter(
-          (score: any) => (score["matchId"] === matchId) || (score["경기ID"] === matchId)
-        );
-
-        console.log("📊 매치 득점 데이터:", matchScores);
-
-        if (matchScores.length > 0 || currentMatch) {
-          // 쿼터별 골 기록 복원
-          const restoredGoalRecords: GoalRecord[] = [];
-          const newQuarterScores: QuarterScore[] = [
-            { our: 0, opponent: 0 },
-            { our: 0, opponent: 0 },
-            { our: 0, opponent: 0 },
-            { our: 0, opponent: 0 },
-          ];
-
-          // ✅ 1. 골/도움 기록 복원 (Scores 시트)
-          // 선수별 쿼터별 골/도움 데이터를 먼저 수집
-          const playerGoalsMap = new Map<string, Map<number, { goals: number; assists: number }>>();
-          
-          matchScores.forEach((score: any) => {
-            const playerName = score["playerName"] || score["이름"];
-            const playerId = String(score["playerId"] ?? score["선수ID"] ?? "").toLowerCase();
-            const isMercenary = score["isMercenary"] || score["용병여부"] || false;
-            let quarterData = score["quarterData"] || [];
-
-            // ✅ opponent 데이터는 playerGoalsMap에 추가하지 않음
-            if (playerId === "opponent") {
-              return;
+      const matchEvents = getGoalEvents().filter((event) => event.matchId === matchId);
+      const restoredGoalRecords: GoalRecord[] = matchEvents.map((event) => ({
+        id: event.id,
+        quarter: event.quarter,
+        goalType: event.goalType,
+        scorer: {
+          name: event.isOpponentGoal ? "상대팀 득점" : event.scorerName,
+          isMercenary: event.scorerIsMercenary,
+        },
+        assist: event.assistName
+          ? {
+              name: event.assistName,
+              isMercenary: event.assistIsMercenary,
             }
+          : null,
+        isOpponentGoal: event.isOpponentGoal,
+      }));
 
-            // ✅ quarterData가 문자열이면 파싱
-            if (typeof quarterData === "string") {
-              try {
-                quarterData = JSON.parse(quarterData);
-              } catch (e) {
-                console.error("❌ quarterData 파싱 실패:", e);
-                quarterData = [];
-              }
-            }
+      const match = getMatchById(matchId);
+      const restoredQuarterCount = Math.max(
+        parseQuarterCount(match?.quarterCount),
+        ...restoredGoalRecords.map((record) => record.quarter),
+      );
+      const newQuarterScores = createEmptyQuarterScores(restoredQuarterCount);
 
-            if (!playerGoalsMap.has(playerName)) {
-              playerGoalsMap.set(playerName, new Map());
-            }
-
-            quarterData.forEach((qData: any) => {
-              const quarter = qData.quarter;
-              const goals = qData.goals || 0;
-              const assists = qData.assists || 0;
-
-              playerGoalsMap.get(playerName)!.set(quarter, { goals, assists });
-            });
-          });
-
-          console.log("📊 선수별 골/도움 맵:", playerGoalsMap);
-
-          // 골 기록 생성 (도움은 나중에 매칭)
-          const goalsByQuarterPlayer: Array<{
-            quarter: number;
-            scorer: string;
-            isMercenary: boolean;
-          }> = [];
-
-          // ✅ 현재 용병 이름 목록 (Google Sheets 데이터가 부정확할 수 있으므로)
-          const currentMercenaryNames = new Set(mercenaries.map(m => m.name));
-
-          matchScores.forEach((score: any) => {
-            const playerName = score["playerName"] || score["이름"];
-            const playerId = String(score["playerId"] ?? score["선수ID"] ?? "").toLowerCase();
-            // ✅ isOpponentGoal 필드 확인 (실점 데이터)
-            const isOpponentGoal = score["isOpponentGoal"] || score["실점여부"] || playerId === "opponent";
-            
-            // ✅ 실점 데이터는 별도로 처리
-            if (isOpponentGoal) {
-              console.log("🔴 실점 데이터 발견:", playerName, "playerId:", playerId);
-              let quarterData = score["quarterData"] || [];
-              
-              // ✅ quarterData가 문자열이면 파싱
-              if (typeof quarterData === "string") {
-                try {
-                  quarterData = JSON.parse(quarterData);
-                } catch (e) {
-                  console.error("❌ quarterData 파싱 실패:", e);
-                  quarterData = [];
-                }
-              }
-              
-              quarterData.forEach((qData: any) => {
-                const quarter = qData.quarter;
-                const goals = qData.goals || 0;
-
-                console.log(`  🔴 Q${quarter} 실점 ${goals}개 복원`);
-
-                // 실점 기록 생성
-                for (let i = 0; i < goals; i++) {
-                  restoredGoalRecords.push({
-                    id: `opponent_${Date.now()}_${Math.random()}`,
-                    quarter: quarter,
-                    scorer: { name: "상대팀 득점", isMercenary: false },
-                    assist: null,
-                    isOpponentGoal: true,
-                  });
-                  newQuarterScores[quarter - 1].opponent += 1;
-                }
-              });
-              return; // 실점은 골/도움 매칭 스킵
-            }
-            
-            // ✅ isMercenary 필드가 부정확할 수 있으므로 용병 목록에서도 확인
-            const isMercenaryFromSheet = score["isMercenary"] || score["용병여부"] || false;
-            const isMercenary = isMercenaryFromSheet || currentMercenaryNames.has(playerName);
-            const quarterData = score["quarterData"] || [];
-
-            quarterData.forEach((qData: any) => {
-              const quarter = qData.quarter;
-              const goals = qData.goals || 0;
-
-              // 골 기록 생성
-              for (let i = 0; i < goals; i++) {
-                goalsByQuarterPlayer.push({
-                  quarter,
-                  scorer: playerName,
-                  isMercenary,
-                });
-              }
-            });
-          });
-
-          console.log("📊 골 기록 목록:", goalsByQuarterPlayer);
-
-          // ✅ 도움 매칭 로직: 각 쿼터별 도움을 "실제 도움 횟수"만큼만 펼쳐서 사용
-          const assistsByQuarterPlayer: Array<{
-            quarter: number;
-            assister: string;
-            isMercenary: boolean;
-            count: number;
-          }> = [];
-
-          playerGoalsMap.forEach((quarterMap, playerName) => {
-            quarterMap.forEach((stats, quarter) => {
-              if (stats.assists > 0) {
-                const isMercenary = matchScores.find(
-                  (s: any) => (s["playerName"] || s["이름"]) === playerName
-                )?.["isMercenary"] || matchScores.find(
-                  (s: any) => (s["playerName"] || s["이름"]) === playerName
-                )?.["용병여부"] || false;
-
-                assistsByQuarterPlayer.push({
-                  quarter,
-                  assister: playerName,
-                  isMercenary: isMercenary || currentMercenaryNames.has(playerName), // ✅ 용병 목록에서도 확인
-                  count: stats.assists,
-                });
-              }
-            });
-          });
-
-          console.log("📊 도움 기록 목록:", assistsByQuarterPlayer);
-
-          // 쿼터별 도움 슬롯 생성
-          // 예: 1쿼터에 A가 도움 2개, B가 도움 1개면 [A, A, B]
-          // 복원 시 이 배열을 앞에서부터 하나씩만 소모해서
-          // 도움 수보다 골 수가 많을 경우 남는 골은 assist=null로 유지한다.
-          const assistSlotsByQuarter = new Map<
-            number,
-            Array<{ name: string; isMercenary: boolean }>
-          >();
-
-          assistsByQuarterPlayer.forEach((assistData) => {
-            const quarterSlots =
-              assistSlotsByQuarter.get(assistData.quarter) || [];
-
-            for (let i = 0; i < assistData.count; i++) {
-              quarterSlots.push({
-                name: assistData.assister,
-                isMercenary: assistData.isMercenary,
-              });
-            }
-
-            assistSlotsByQuarter.set(assistData.quarter, quarterSlots);
-          });
-
-          console.log("📊 쿼터별 도움 슬롯:", assistSlotsByQuarter);
-
-          // ✅ 골 기록 생성 (쿼터별로 도움 매칭)
-          goalsByQuarterPlayer.forEach((goalData) => {
-            // ✅ 자책골 체크
-            if (goalData.scorer === "자책골") {
-              restoredGoalRecords.push({
-                id: `restored_${Date.now()}_${Math.random()}`,
-                quarter: goalData.quarter,
-                scorer: { name: "자책골", isMercenary: false },
-                assist: null,
-                isOpponentGoal: false,
-              });
-              newQuarterScores[goalData.quarter - 1].our += 1;
-              return; // 자책골은 도움 없음
-            }
-
-            let assist: { name: string; isMercenary: boolean } | null = null;
-
-            // ✅ 해당 쿼터의 도움이 남아 있는 경우에만 순서대로 하나씩 할당
-            const quarterAssistSlots =
-              assistSlotsByQuarter.get(goalData.quarter) || [];
-
-            if (quarterAssistSlots.length > 0) {
-              const assistData = quarterAssistSlots.shift()!;
-              assist = {
-                name: assistData.name,
-                isMercenary: assistData.isMercenary,
-              };
-            }
-
-            restoredGoalRecords.push({
-              id: `restored_${Date.now()}_${Math.random()}`,
-              quarter: goalData.quarter,
-              scorer: { name: goalData.scorer, isMercenary: goalData.isMercenary },
-              assist,
-              isOpponentGoal: false,
-            });
-
-            newQuarterScores[goalData.quarter - 1].our += 1;
-          });
-
-          console.log("✅ 골/도움 기록 복원 완료:", restoredGoalRecords);
-          console.log("✅ 쿼터 스코어 복원 완료:", newQuarterScores);
-
-          // ✅ 데이터 로드 완료 후 제거된 선수의 골/도움 기록 필터링
-          // setTimeout 대신 직접 필터링 (state 업데이트는 비동기이므로)
-          console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-          console.log("🔍 제거된 선수/용병 골 기록 필터링 시작...");
-          
-          const selectedPlayerNames = new Set(selectedPlayers.map(p => p.name));
-          // currentMercenaryNames는 이미 위에서 선언됨 (287번 줄)
-          
-          console.log("📋 현재 참가 인원:", {
-            선수: Array.from(selectedPlayerNames),
-            용병: Array.from(currentMercenaryNames),
-          });
-          console.log("📋 복원된 골 기록 (필터링 전):", restoredGoalRecords);
-
-          // 골 기록 필터링
-          const filteredGoalRecords = restoredGoalRecords.filter(record => {
-            // 상대팀 골과 자책골은 유지
-            if (record.isOpponentGoal || record.scorer.name === "자책골") return true;
-
-            // 득점자 확인
-            const scorerExists = record.scorer.isMercenary
-              ? currentMercenaryNames.has(record.scorer.name)
-              : selectedPlayerNames.has(record.scorer.name);
-
-            if (!scorerExists) {
-              console.log(`❌ 득점자 제거됨: ${record.scorer.name} (${record.quarter}쿼터)`);
-              return false;
-            }
-
-            // 도움자 확인 (있는 경우만)
-            if (record.assist) {
-              const assistExists = record.assist.isMercenary
-                ? currentMercenaryNames.has(record.assist.name)
-                : selectedPlayerNames.has(record.assist.name);
-
-              if (!assistExists) {
-                console.log(`⚠️ 도움자 제거됨: ${record.assist.name} → 도움만 null로 변경`);
-                // 도움자만 제거 (골 기록은 유지)
-                record.assist = null;
-              }
-            }
-
-            return true;
-          });
-
-          // 변경 사항이 있으면 다시 계산
-          if (filteredGoalRecords.length !== restoredGoalRecords.length || 
-              JSON.stringify(filteredGoalRecords) !== JSON.stringify(restoredGoalRecords)) {
-            
-            console.log("⚠️ 골 기록 변경 감지:", {
-              이전: restoredGoalRecords.length,
-              이후: filteredGoalRecords.length,
-              삭제됨: restoredGoalRecords.length - filteredGoalRecords.length
-            });
-
-            // 쿼터 스코어 재계산
-            const filteredQuarterScores: QuarterScore[] = [
-              { our: 0, opponent: 0 },
-              { our: 0, opponent: 0 },
-              { our: 0, opponent: 0 },
-              { our: 0, opponent: 0 },
-            ];
-
-            filteredGoalRecords.forEach(record => {
-              if (record.isOpponentGoal) {
-                filteredQuarterScores[record.quarter - 1].opponent += 1;
-              } else {
-                filteredQuarterScores[record.quarter - 1].our += 1;
-              }
-            });
-
-            // ✅ 필터링된 데이터로 업데이트
-            setGoalRecords(filteredGoalRecords);
-            setQuarterScores(filteredQuarterScores);
-
-            console.log("✅ 필터링된 골 기록:", filteredGoalRecords);
-            console.log("✅ 재계산된 쿼터 스코어:", filteredQuarterScores);
-          } else {
-            console.log("✅ 제거된 선수 없음 - 필터링 불필요");
-            // 필터링 불필요하면 원본 데이터 사용
-            setGoalRecords(restoredGoalRecords);
-            setQuarterScores(newQuarterScores);
-          }
-
-          console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      restoredGoalRecords.forEach((record) => {
+        if (!newQuarterScores[record.quarter - 1]) return;
+        if (record.isOpponentGoal) {
+          newQuarterScores[record.quarter - 1].opponent += 1;
+        } else {
+          newQuarterScores[record.quarter - 1].our += 1;
         }
+      });
 
-        // ✅ 최초 데이터 로드 시 prevMercenariesRef 초기화 (필터링 방지)
-        prevMercenariesRef.current = [...mercenaries];
-        console.log("✅ prevMercenariesRef 초기화 완료:", mercenaries);
-
-        console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        console.log("🎉 기존 데이터 로드 완료!");
-        console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        setIsInitialLoadComplete(true);
-      }
+      setGoalRecords(restoredGoalRecords);
+      setRegisteredQuarterCount(restoredQuarterCount);
+      setCurrentQuarter((quarter) => Math.min(quarter, restoredQuarterCount));
+      setQuarterScores(newQuarterScores);
+      prevMercenariesRef.current = [...mercenaries];
+      setIsInitialLoadComplete(true);
     } catch (error) {
       console.error("❌ 기존 데이터 로드 실패:", error);
     } finally {
@@ -629,12 +344,7 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
       });
 
       // 쿼터 스코어 재계산
-      const newQuarterScores: QuarterScore[] = [
-        { our: 0, opponent: 0 },
-        { our: 0, opponent: 0 },
-        { our: 0, opponent: 0 },
-        { our: 0, opponent: 0 },
-      ];
+      const newQuarterScores = createEmptyQuarterScores(registeredQuarterCount);
 
       filteredGoalRecords.forEach(record => {
         if (record.isOpponentGoal) {
@@ -664,7 +374,22 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
     { our: 0, opponent: 0 }
   );
 
-  const currentQuarterScore = quarterScores[currentQuarter - 1];
+  const quarterNumbers = Array.from(
+    { length: registeredQuarterCount },
+    (_, index) => index + 1,
+  );
+  const shouldScrollQuarterTabs = registeredQuarterCount > 4;
+  const currentQuarterScore = quarterScores[currentQuarter - 1] || { our: 0, opponent: 0 };
+  const scoreNumberStyle = {
+    WebkitBackgroundClip: "text",
+    backgroundClip: "text",
+    WebkitTextFillColor: "transparent",
+    backgroundImage: "linear-gradient(180deg, #616274 0%, #21252a 100%)",
+    color: "transparent",
+    fontFamily: "var(--font-anton)",
+    fontSize: "128px",
+    lineHeight: "132px",
+  } as const;
 
   const getMatchResult = () => {
     if (totalScore.our > totalScore.opponent) return '승';
@@ -771,8 +496,8 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
   };
 
   const handleQuarterComplete = () => {
-    // 다음 쿼터로 이동 (4쿼터가 아닌 경우)
-    if (currentQuarter < 4) {
+    // 다음 쿼터로 이동
+    if (currentQuarter < registeredQuarterCount) {
       setCurrentQuarter(currentQuarter + 1);
     }
   };
@@ -786,28 +511,6 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
     setIsSaving(true);
     
     try {
-      // ✅ 수정 모드일 때 기존 데이터 삭제
-      if (isEditMode) {
-        console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        console.log("🗑️ 수정 모드: 기존 데이터 삭제 중...");
-        
-        // Google Sheets에서 기존 Scores 및 Participants 삭제
-        await fetch(googleScriptUrl, {
-          method: "POST",
-          mode: "no-cors",
-          headers: {
-            "Content-Type": "text/plain;charset=utf-8",
-          },
-          body: JSON.stringify({
-            action: "deleteMatchScores",
-            data: JSON.stringify({ matchId: matchId }),
-          }),
-        });
-        
-        console.log("✅ 기존 스코어 데이터 삭제 완료");
-        console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      }
-
       // 각 선수별 골/도움 집계
       const playerStats: { [name: string]: { goals: number; assists: number } } = {};
 
@@ -842,22 +545,26 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
 
       // Score 데이터 생성 (일반 선수)
       const regularPlayerScores: Score[] = selectedPlayers.map((player) => (({
-        id: generateId("score"),
+        id: `score_${matchId}_${player.id}`,
         matchId: matchId,
         playerId: player.id,
         playerName: player.name,
+        playerNumber: player.number,
         goals: playerStats[player.name].goals,
         assists: playerStats[player.name].assists,
+        isMercenary: false,
       })));
 
       // ✅ Score 데이터 생성 (용병)
       const mercenaryScores: Score[] = mercenaries.map((merc) => ({
-        id: generateId("score"),
+        id: `score_${matchId}_mercenary_${merc.id}`,
         matchId: matchId,
         playerId: `mercenary_${merc.id}`,
         playerName: merc.name,
+        playerNumber: "GUEST",
         goals: playerStats[merc.name]?.goals || 0,
         assists: playerStats[merc.name]?.assists || 0,
+        isMercenary: true,
       }));
 
       // ✅ 자책골 데이터 생성
@@ -866,291 +573,146 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
       ).length;
 
       const ownGoalScores: Score[] = ownGoalCount > 0 ? [{
-        id: generateId("score"),
+        id: `score_${matchId}_own_goal`,
         matchId: matchId,
         playerId: "0", // 자책골은 playerId 0으로 설정
         playerName: "자책골",
+        playerNumber: "0",
         goals: ownGoalCount,
         assists: 0,
+        isMercenary: false,
       }] : [];
 
       const scores = [...regularPlayerScores, ...mercenaryScores, ...ownGoalScores];
+      const quarterNumbers = quarterScores.map((_, index) => index + 1);
+      const scoreData = scores
+        .filter((score) => score.goals > 0 || score.assists > 0)
+        .map((score) => ({
+          ...score,
+          quarterData: quarterNumbers.map((quarter) => ({
+            quarter,
+            goals: goalRecords.filter(
+              (record) =>
+                record.quarter === quarter &&
+                !record.isOpponentGoal &&
+                record.scorer.name === score.playerName
+            ).length,
+            assists: goalRecords.filter(
+              (record) =>
+                record.quarter === quarter &&
+                !record.isOpponentGoal &&
+                record.assist?.name === score.playerName
+            ).length,
+          })),
+        }));
 
-      // LocalStorage에 득점 데이터 저장
-      addScores(scores);
+      const opponentScoreData: Score[] = quarterScores.flatMap((qScore, index) => {
+        if (qScore.opponent === 0) return [];
 
-      // ✅ LocalStorage에 참가자 데이터 저장
+        const quarter = index + 1;
+        return [{
+          id: `score_${matchId}_opponent_q${quarter}`,
+          matchId,
+          playerId: "opponent",
+          playerName: opponentName || "상대팀",
+          playerNumber: "OPP",
+          goals: qScore.opponent,
+          assists: 0,
+          isMercenary: false,
+          isOpponentGoal: true,
+          quarterData: quarterNumbers.map((q) => ({
+            quarter: q,
+            goals: q === quarter ? qScore.opponent : 0,
+            assists: 0,
+          })),
+        }];
+      });
+
+      const allScoreData = [...scoreData, ...opponentScoreData];
+
       const participantData: Participant[] = selectedPlayers.map(player => ({
         id: `participant_${matchId}_${player.id}`,
         matchId: matchId,
         playerId: player.id,
+        playerName: player.name,
+        playerNumber: player.number,
         isMercenary: false,
       }));
-      
+
       const mercenaryParticipants: Participant[] = mercenaries.map(merc => ({
         id: `participant_${matchId}_mercenary_${merc.id}`,
         matchId: matchId,
         playerId: `mercenary_${merc.id}`,
+        playerName: merc.name,
+        playerNumber: "GUEST",
         isMercenary: true,
       }));
 
       const allParticipants = [...participantData, ...mercenaryParticipants];
-      
-      // 기존 참가자 데이터 중 이 매치 것만 제거하고 새로 추가
+      const now = new Date().toISOString();
+      const goalEvents: GoalEvent[] = goalRecords.map((record, index) => {
+        const scorerPlayer = selectedPlayers.find((player) => player.name === record.scorer.name);
+        const scorerMercenary = mercenaries.find((mercenary) => mercenary.name === record.scorer.name);
+        const assistPlayer = selectedPlayers.find((player) => player.name === record.assist?.name);
+        const assistMercenary = mercenaries.find((mercenary) => mercenary.name === record.assist?.name);
+
+        const scorerId = record.isOpponentGoal
+          ? "opponent"
+          : record.scorer.name === "자책골"
+            ? "0"
+            : scorerPlayer?.id || (scorerMercenary ? `mercenary_${scorerMercenary.id}` : record.scorer.name);
+
+        const goalType: GoalType = record.isOpponentGoal
+          ? "opponent_team"
+          : record.scorer.name === "자책골"
+            ? "opponent_own_goal"
+            : record.scorer.isMercenary
+              ? "mercenary"
+              : "team_player";
+
+        return {
+          id: `goal_${matchId}_${index}_${record.id}`,
+          matchId,
+          quarter: record.quarter,
+          goalType,
+          scorerId,
+          scorerName: record.isOpponentGoal ? (opponentName || "상대팀") : record.scorer.name,
+          scorerIsMercenary: record.scorer.isMercenary,
+          assistId: assistPlayer?.id || (assistMercenary ? `mercenary_${assistMercenary.id}` : null),
+          assistName: record.assist?.name || null,
+          assistIsMercenary: Boolean(record.assist?.isMercenary),
+          isOpponentGoal: record.isOpponentGoal,
+          timestamp: now,
+          createdAt: now,
+        };
+      });
+
+      saveScores([
+        ...getScores().filter((score) => score.matchId !== matchId),
+        ...allScoreData,
+      ]);
+
       const existingParticipants = getParticipants().filter(p => p.matchId !== matchId);
       saveParticipants([...existingParticipants, ...allParticipants]);
-      
-      console.log("✅ 참가자 데이터 저장 완료:", allParticipants);
+      replaceGoalEventsByMatchId(matchId, goalEvents);
 
-      // 매치 완료 ��리
       updateMatch(matchId, {
         isCompleted: true,
         ourScore: totalScore.our,
         opponentScore: totalScore.opponent,
       });
 
-      console.log("✅ 득점 데이터 저장 완료:", scores);
-      console.log("✅ 매치 업데이트 완료:", { matchId, ourScore: totalScore.our, opponentScore: totalScore.opponent });
-
-      // 구글 시트에 완전한 데이터 저장
-      try {
-        console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        console.log("📤 구글 시트 저장 시작...");
-        console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        console.log("🔍 선택된 선수 전체 정보:", selectedPlayers);
-        console.log("🔍 생성된 득점 데이터:", scores);
-        console.log("🔍 득점 기록:", goalRecords);
-        console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-
-        // 1. 매치 스코어 업데이트 (쿼터별 상세 정보 포함)
-        console.log("📤 [1/3] 매치 업데이트 (Matches 시트)");
-        
-        // ✅ 쿼터별 득점/실점 데이터 생성
-        const quarterScoresData = quarterScores.map((qScore, index) => ({
-          quarter: index + 1,
-          ourScore: qScore.our,
-          opponentScore: qScore.opponent,
-        }));
-        
-        console.log("📊 쿼터별 스코어 데이터:", quarterScoresData);
-        
-        await fetch(googleScriptUrl, {
-          method: "POST",
-          mode: "no-cors",
-          headers: {
-            "Content-Type": "text/plain;charset=utf-8",
-          },
-          body: JSON.stringify({
-            action: "updateMatch",
-            data: JSON.stringify({
-              matchId: matchId,
-              isCompleted: true,
-              ourScore: totalScore.our,
-              opponentScore: totalScore.opponent,
-              quarterScores: quarterScoresData, // ✅ 쿼터별 데이터 추가
-            }),
-          }),
+      if (isSupabaseConfigured) {
+        await updateMatchInSupabase(matchId, {
+          isCompleted: true,
+          ourScore: totalScore.our,
+          opponentScore: totalScore.opponent,
         });
-        console.log("✅ 매치 업데이트 완료");
-
-        // 2. 득점 데이터 저장 (쿼터별 상세 정보 포함)
-        const scoreData = scores
-          .filter((score) => score.goals > 0 || score.assists > 0)
-          .map((score) => {
-            // ✅ 자책골인지 확인
-            const isOwnGoal = score.playerName === "자책골";
-            
-            // ✅ 일반 선수인지 용병인지 확인
-            const player = selectedPlayers.find((p) => p.id === score.playerId);
-            const mercenary = mercenaries.find((m) => `mercenary_${m.id}` === score.playerId);
-            
-            // 쿼터별 데이터 생성
-            const quarterData = [1, 2, 3, 4].map((quarter) => {
-              const quarterGoals = goalRecords.filter(
-                (record) =>
-                  record.quarter === quarter &&
-                  !record.isOpponentGoal &&
-                  record.scorer.name === score.playerName
-              ).length;
-              
-              const quarterAssists = goalRecords.filter(
-                (record) =>
-                  record.quarter === quarter &&
-                  !record.isOpponentGoal &&
-                  record.assist?.name === score.playerName
-              ).length;
-              
-              return { quarter, goals: quarterGoals, assists: quarterAssists };
-            });
-            
-            return {
-              id: score.id,
-              matchId: score.matchId,
-              playerId: score.playerId,
-              playerName: score.playerName,
-              playerNumber: isOwnGoal ? "0" : (mercenary ? "GUEST" : (player?.number || "?")),
-              goals: score.goals,
-              assists: score.assists,
-              isMercenary: isOwnGoal ? false : (mercenary ? true : false),
-              quarterData: quarterData,
-            };
-          });
-
-        // ✅ 실점 데이터 생성 (상대팀 골을 Scores 시트에 저장)
-        const opponentScoreData = quarterScores.flatMap((qScore, index) => {
-          if (qScore.opponent === 0) return [];
-          
-          const quarter = index + 1;
-          const quarterData = [1, 2, 3, 4].map((q) => ({
-            quarter: q,
-            goals: q === quarter ? qScore.opponent : 0,
-            assists: 0,
-          }));
-          
-          return [{
-            id: `opponent_${matchId}_q${quarter}_${Date.now()}`,
-            matchId: matchId,
-            playerId: "opponent",
-            playerName: opponentName || "상대팀",
-            playerNumber: "OPP",
-            goals: qScore.opponent,
-            assists: 0,
-            isMercenary: false,
-            isOpponentGoal: true,
-            quarterData: quarterData,
-          }];
-        });
-
-        // ✅ 득점 + 실점 데이터 합치기
-        const allScoreData = [...scoreData, ...opponentScoreData];
-
-        console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        console.log("📤 [2/3] 득점+실점 데이터 (Scores 시트):");
-        console.log("  득점 데이터:", scoreData.length, "개");
-        console.log("  실점 데이터:", opponentScoreData.length, "개");
-        console.log(JSON.stringify(allScoreData, null, 2));
-        console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-
-        if (allScoreData.length > 0) {
-          // ✅ 기존 Scores 데이터 삭제 (중복 방지)
-          await fetch(googleScriptUrl, {
-            method: "POST",
-            mode: "no-cors",
-            headers: {
-              "Content-Type": "text/plain;charset=utf-8",
-            },
-            body: JSON.stringify({
-              action: "deleteMatchScores",
-              data: JSON.stringify({ matchId: matchId }),
-            }),
-          });
-          console.log("✅ 기존 Scores 데이터 삭제 완료");
-
-          // 새로운 Scores 데이터 저장
-          await fetch(googleScriptUrl, {
-            method: "POST",
-            mode: "no-cors",
-            headers: {
-              "Content-Type": "text/plain;charset=utf-8",
-            },
-            body: JSON.stringify({
-              action: "saveScores",
-              data: JSON.stringify(allScoreData),
-            }),
-          });
-          console.log("✅ 득점+실점 데이터 저장 완료");
-        } else {
-          console.log("⚠️ 득점 데이터 없음 (스킵)");
-        }
-
-        // 3. 선수 마스터 이터 저장
-        const playerData = selectedPlayers.map((player) => ({
-          id: player.id,
-          number: player.number,
-          name: player.name,
-          isMercenary: false,
-        }));
-
-        console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        console.log("📤 [3/3] 선수 마스터 데이터 (Players 시트):");
-        console.log(JSON.stringify(playerData, null, 2));
-        console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-
-        await fetch(googleScriptUrl, {
-          method: "POST",
-          mode: "no-cors",
-          headers: {
-            "Content-Type": "text/plain;charset=utf-8",
-          },
-          body: JSON.stringify({
-            action: "savePlayers",
-            data: JSON.stringify(playerData),
-          }),
-        });
-        console.log("✅ 선수 데이터 저장 완료");
-
-        // 4. 경기 참가 인원 저장 (Participants 시트) ✅ 용병 포함!
-        const participantsData = [
-          // 일반 선수
-          ...selectedPlayers.map((player) => ({
-            id: `participant_${matchId}_${player.id}_${Date.now()}`,
-            matchId: matchId,
-            playerId: player.id,
-            playerName: player.name,
-            playerNumber: player.number,
-            isMercenary: false,
-          })),
-          // 용병 선수
-          ...mercenaries.map((m) => ({
-            id: `participant_${matchId}_mercenary_${m.id}_${Date.now()}`,
-            matchId: matchId,
-            playerId: `mercenary_${m.id}`,
-            playerName: m.name,
-            playerNumber: "GUEST",
-            isMercenary: true,
-          })),
-        ];
-
-        console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        console.log("📤 [4/4] 경기 참가 인원 데이터 (Participants 시트):");
-        console.log(JSON.stringify(participantsData, null, 2));
-        console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-
-        // ✅ 기존 Participants 데이터 삭제 (중복 방지)
-        await fetch(googleScriptUrl, {
-          method: "POST",
-          mode: "no-cors",
-          headers: {
-            "Content-Type": "text/plain;charset=utf-8",
-          },
-          body: JSON.stringify({
-            action: "deleteMatchParticipants",
-            data: JSON.stringify({ matchId: matchId }),
-          }),
-        });
-        console.log("✅ 기존 Participants 데이터 삭제 완료");
-
-        // 새로운 Participants 데이터 저장
-        await fetch(googleScriptUrl, {
-          method: "POST",
-          mode: "no-cors",
-          headers: {
-            "Content-Type": "text/plain;charset=utf-8",
-          },
-          body: JSON.stringify({
-            action: "saveParticipants",
-            data: JSON.stringify(participantsData),
-          }),
-        });
-        console.log("✅ 경기 참가 인원 저장 완료");
-
-        console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        console.log("🎉 구글 시트 저장 모두 완료!");
-        console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━���━━━━━━━");
-      } catch (error) {
-        console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        console.error("❌ 구글 시트 저장 실패:", error);
-        console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        await Promise.all([
+          replaceScoresForMatchInSupabase(matchId, allScoreData),
+          replaceParticipantsForMatchInSupabase(matchId, allParticipants),
+          replaceGoalEventsForMatchInSupabase(matchId, goalEvents),
+        ]);
       }
 
       setShowSuccessToast(true);
@@ -1231,19 +793,31 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
         </div>
 
         {/* Quarter Tabs */}
-        <div className="relative shrink-0 w-full">
-          <div className="content-stretch flex flex-col items-start px-[20px] relative w-full">
+        <div className="relative shrink-0 w-full overflow-hidden">
+          <div className="content-stretch flex flex-col items-start relative w-full overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+            <div
+              className={`content-stretch flex flex-col items-start px-[20px] relative ${
+                shouldScrollQuarterTabs ? "w-max" : "w-full"
+              }`}
+            >
             <div className="bg-[#f2f2f2] relative rounded-[12px] shrink-0 w-full">
-              <div className="flex flex-row items-center size-full">
-                <div className="content-stretch flex items-center p-[4px] relative w-full">
-                  {[1, 2, 3, 4].map((quarter) => {
+              <div
+                className={`content-stretch flex items-center p-[4px] relative ${
+                  shouldScrollQuarterTabs ? "w-max" : "w-full"
+                }`}
+              >
+                  {quarterNumbers.map((quarter) => {
                     const isActive = currentQuarter === quarter;
-                    const score = quarterScores[quarter - 1];
+                    const score = quarterScores[quarter - 1] || { our: 0, opponent: 0 };
                     return (
                       <button
                         key={quarter}
                         onClick={() => handleQuarterClick(quarter)}
-                        className={`flex-[1_0_0] min-h-px min-w-px relative rounded-[8px] ${
+                        className={`relative rounded-[8px] ${
+                          shouldScrollQuarterTabs
+                            ? "shrink-0 w-[80px]"
+                            : "flex-[1_0_0] min-w-px"
+                        } ${
                           isActive ? "bg-white shadow-[0px_0px_8px_0px_rgba(0,0,0,0.1)]" : ""
                         }`}
                       >
@@ -1264,8 +838,8 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
                       </button>
                     );
                   })}
-                </div>
               </div>
+            </div>
             </div>
           </div>
         </div>
@@ -1330,8 +904,8 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
                     </p>
                     <button
                       onClick={() => setShowScorerSheet(true)}
-                      className="bg-clip-text bg-gradient-to-b leading-[168px] relative shrink-0 text-[164px] text-center from-[#616274] to-[#21252a] cursor-pointer"
-                      style={{ WebkitTextFillColor: "transparent", fontFamily: 'var(--font-anton)' }}
+                      className="relative shrink-0 text-center cursor-pointer"
+                      style={scoreNumberStyle}
                     >
                       {currentQuarterScore.our}
                     </button>
@@ -1365,8 +939,8 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
                     </p>
                     <button
                       onClick={handleOpponentGoal}
-                      className="bg-clip-text bg-gradient-to-b leading-[168px] relative shrink-0 text-[164px] text-center from-[#616274] to-[#21252a] cursor-pointer"
-                      style={{ WebkitTextFillColor: "transparent", fontFamily: 'var(--font-anton)' }}
+                      className="relative shrink-0 text-center cursor-pointer"
+                      style={scoreNumberStyle}
                     >
                       {currentQuarterScore.opponent}
                     </button>
@@ -1384,7 +958,7 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
 
                 {/* Right Arrow */}
                 <div className="content-stretch flex items-center pb-[40px] relative shrink-0">
-                  {currentQuarter < 4 && (
+                  {currentQuarter < registeredQuarterCount && (
                     <button
                       onClick={() => setCurrentQuarter(currentQuarter + 1)}
                       className="content-stretch flex items-center justify-center relative shrink-0 size-[40px]"
@@ -1408,7 +982,7 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
                       </div>
                     </button>
                   )}
-                  {currentQuarter === 4 && <div className="size-[40px]" />}
+                  {currentQuarter === registeredQuarterCount && <div className="size-[40px]" />}
                 </div>
               </div>
             </div>
@@ -1527,7 +1101,7 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
 
       {/* Bottom Button */}
       <div className="fixed backdrop-blur-[2.5px] bg-[rgba(255,255,255,0.5)] bottom-0 left-0 right-0 content-stretch flex flex-col items-start pb-[48px] pt-[16px] px-[20px] border-t border-[rgba(255,255,255,0.5)]">
-        {currentQuarter === 4 ? (
+        {currentQuarter === registeredQuarterCount ? (
           <button 
             onClick={handleFinalScoreSave}
             disabled={isSaving}

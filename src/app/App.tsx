@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import svgPaths from "../imports/svg-zcyalr9017";
 import MercenaryModal from "./components/MercenaryModal";
 import MercenaryManagement from "./components/MercenaryManagement";
@@ -8,8 +8,21 @@ import MatchListScreen, {
   MatchListItem,
 } from "./components/MatchListScreen";
 import MatchRegistration from "./components/MatchRegistration";
-import { fetchJSONP } from "./utils/jsonp";
 import { Toaster } from "sonner";
+import { isSupabaseConfigured } from "./lib/supabase";
+import { fetchMatchesFromSupabase } from "./services/supabaseMatches";
+import {
+  getParticipants,
+  saveGoalEvents,
+  saveMOMs,
+  saveMatches,
+  saveParticipants,
+  saveScores,
+} from "./utils/storage";
+import {
+  fetchAppDataFromSupabase,
+  replaceParticipantsForMatchInSupabase,
+} from "./services/supabaseAppData";
 
 interface Player {
   id: string;
@@ -21,6 +34,48 @@ interface Mercenary {
   id: string;
   name: string;
 }
+
+type AppRoute =
+  | { name: "home" }
+  | { name: "matches" }
+  | { name: "newMatch" }
+  | { name: "participants"; matchId: string }
+  | { name: "score"; matchId: string };
+
+const parseRoute = (pathname: string): AppRoute => {
+  const normalizedPath = pathname.replace(/\/+$/, "") || "/";
+
+  if (normalizedPath === "/") return { name: "home" };
+  if (normalizedPath === "/matches") return { name: "matches" };
+  if (normalizedPath === "/matches/new") return { name: "newMatch" };
+
+  const participantsMatch = normalizedPath.match(/^\/matches\/([^/]+)\/participants$/);
+  if (participantsMatch) {
+    return { name: "participants", matchId: decodeURIComponent(participantsMatch[1]) };
+  }
+
+  const scoreMatch = normalizedPath.match(/^\/matches\/([^/]+)\/score$/);
+  if (scoreMatch) {
+    return { name: "score", matchId: decodeURIComponent(scoreMatch[1]) };
+  }
+
+  return { name: "home" };
+};
+
+const buildPath = (route: AppRoute): string => {
+  switch (route.name) {
+    case "home":
+      return "/";
+    case "matches":
+      return "/matches";
+    case "newMatch":
+      return "/matches/new";
+    case "participants":
+      return `/matches/${encodeURIComponent(route.matchId)}/participants`;
+    case "score":
+      return `/matches/${encodeURIComponent(route.matchId)}/score`;
+  }
+};
 
 const players: Player[] = [
   { id: "1", number: "1", name: "박지황" },
@@ -140,22 +195,17 @@ function PlayerCard({
 }
 
 export default function App() {
+  const appScrollRef = useRef<HTMLDivElement>(null);
+  const [route, setRoute] = useState<AppRoute>(() =>
+    parseRoute(window.location.pathname),
+  );
   const [selectedPlayers, setSelectedPlayers] = useState<
     Set<string>
   >(new Set());
-  const [showSuccess, setShowSuccess] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [showMercenaryManagement, setShowMercenaryManagement] =
     useState(false);
   const [isSavingToGoogle, setIsSavingToGoogle] =
-    useState(false);
-  const [showScoreTracking, setShowScoreTracking] =
-    useState(false);
-  const [showPlayerSelection, setShowPlayerSelection] =
-    useState(false);
-  const [showMatchList, setShowMatchList] = useState(false);
-  const [showMatchRegistration, setShowMatchRegistration] =
     useState(false);
   const [currentMatchId, setCurrentMatchId] = useState<
     string | null
@@ -195,9 +245,46 @@ export default function App() {
   const [isLoadingCache, setIsLoadingCache] = useState(true);
   const [shouldRefetch, setShouldRefetch] = useState(true); // 데이터를 다시 불러와야 하는지 여부
 
-  // 여기에 Google Apps Script 웹 앱 URL을 붙여넣으세요
-  const GOOGLE_SCRIPT_URL =
-    "https://script.google.com/macros/s/AKfycbxQwNZwPSeOHFVAww09cfwXcPpsYB6CmFlY8cigpX2uC4qwEQHbGpYhmNuoeJuDwNwt/exec";
+  const navigateTo = (nextRoute: AppRoute, options?: { replace?: boolean }) => {
+    const nextPath = buildPath(nextRoute);
+    const currentPath = window.location.pathname + window.location.search;
+
+    if (currentPath !== nextPath) {
+      if (options?.replace) {
+        window.history.replaceState(null, "", nextPath);
+      } else {
+        window.history.pushState(null, "", nextPath);
+      }
+    }
+
+    setRoute(nextRoute);
+  };
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setRoute(parseRoute(window.location.pathname));
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  useEffect(() => {
+    if (route.name === "participants" || route.name === "score") {
+      setCurrentMatchId(route.matchId);
+    }
+
+    if (
+      route.name === "score" &&
+      !isLoadingCache &&
+      (currentMatchId !== route.matchId || selectedPlayers.size === 0)
+    ) {
+      const restored = restoreMatchSelectionFromParticipants(route.matchId);
+      if (restored) {
+        setIsEditMode(true);
+      }
+    }
+  }, [route, isLoadingCache]);
 
   // 🔄 앱 초기화: 선수 데이터를 LocalStorage에 저장
   useEffect(() => {
@@ -213,185 +300,201 @@ export default function App() {
     );
   }, []);
 
-  // 🔄 앱 시작 시 Google Sheets에서 데이터 로드
+  // 🔄 앱 시작 시 Supabase에서 매치 데이터 로드
   useEffect(() => {
     if (shouldRefetch) {
-      loadDataFromGoogleSheets();
+      loadDataFromSupabase();
     }
   }, [shouldRefetch]);
 
-  const loadDataFromGoogleSheets = async () => {
+  // 화면 전환 시 이전 화면의 스크롤 위치가 남아 흰 화면처럼 보이는 문제 방지
+  useEffect(() => {
+    appScrollRef.current?.scrollTo({ top: 0, left: 0 });
+    window.scrollTo({ top: 0, left: 0 });
+  }, [route, showMercenaryManagement]);
+
+  const loadDataFromSupabase = async () => {
     setIsLoadingCache(true);
     try {
       console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      console.log(
-        "📊 Google Sheets에서 전역 데이터 로드 중...",
-      );
-      console.log("🔗 URL:", GOOGLE_SCRIPT_URL);
+      console.log("📊 Supabase에서 매치 데이터 로드 중...");
       console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
-      // JSONP 방식으로 Matches, Scores, PlayerStats, Participants, MOMs 데이터 병렬 로드
-      const [
-        matchesData,
-        scoresData,
-        statsData,
-        participantsData,
-        momsData,
-      ] = await Promise.all([
-        fetchJSONP<{ success: boolean; matches: any[] }>(
-          `${GOOGLE_SCRIPT_URL}?action=getMatches`,
-        ),
-        fetchJSONP<{ success: boolean; scores: any[] }>(
-          `${GOOGLE_SCRIPT_URL}?action=getScores`,
-        ).catch((error) => {
-          console.log("⚠️ Scores 데이터 없음 (선택사항)");
-          return { success: false, scores: [] };
-        }),
-        fetchJSONP<{ success: boolean; stats: any[] }>(
-          `${GOOGLE_SCRIPT_URL}?action=getPlayerStats`,
-        ).catch((error) => {
-          console.log("⚠️ PlayerStats 데이터 없음 (선택사항)");
-          return { success: false, stats: [] };
-        }),
-        // ✅ Participants 데이터 추가
-        fetchJSONP<{ success: boolean; participants: any[] }>(
-          `${GOOGLE_SCRIPT_URL}?action=getParticipants`,
-        ).catch((error) => {
-          console.log("⚠️ Participants 데이터 없음 (선택사항)");
-          return { success: false, participants: [] };
-        }),
-        // ✅ MOMs 데이터 추가
-        fetchJSONP<{ success: boolean; moms: any[] }>(
-          `${GOOGLE_SCRIPT_URL}?action=getMOMs`,
-        ).catch((error) => {
-          console.log("⚠️ MOMs 데이터 없음 (선택사항)");
-          return { success: false, moms: [] };
-        }),
-      ]);
+      if (!isSupabaseConfigured) {
+        console.warn("⚠️ Supabase 설정이 없어 원격 매치 로드를 건너뜁니다.");
+        setCachedGoogleData({
+          matches: [],
+          scores: [],
+          stats: [],
+          participants: [],
+          moms: [],
+          timestamp: Date.now(),
+        });
+        setShouldRefetch(false);
+        return;
+      }
 
-      console.log("📦 받은 Matches 데이터:", matchesData);
-      console.log("📦 받은 Scores 데이터:", scoresData);
-      console.log("📦 받은 Stats 데터:", statsData);
-      console.log(
-        "📦 받은 Participants 데이터:",
-        participantsData,
-      );
-      console.log("📦 받은 MOMs 데이터:", momsData); // ✅ MOMs 로그 추가
+      const supabaseMatches = await fetchMatchesFromSupabase();
+      const appData = await fetchAppDataFromSupabase(supabaseMatches);
+      saveMatches(appData.matches);
+      saveScores(appData.scores);
+      saveParticipants(appData.participants);
+      saveMOMs(appData.moms);
+      saveGoalEvents(appData.goalEvents);
+      const loadedMatches: MatchListItem[] = supabaseMatches.map((match) => {
+        const dateOnly = match.matchDate.split("T")[0];
+        const [year, month, day] = dateOnly.split("-").map(Number);
+        const matchDate = new Date(year, month - 1, day);
+        const dayOfWeek = ["일", "월", "화", "수", "목", "금", "토"][
+          matchDate.getDay()
+        ];
+        const ourScore = match.ourScore ?? 0;
+        const opponentScore = match.opponentScore ?? 0;
+        let result: "win" | "lose" | "draw" | undefined;
 
-      // 캐시에 저장
+        if (match.isCompleted) {
+          if (ourScore > opponentScore) result = "win";
+          else if (ourScore < opponentScore) result = "lose";
+          else result = "draw";
+        }
+
+        return {
+          id: match.id,
+          date: dateOnly.replace(/-/g, "."),
+          dayOfWeek,
+          ourScore,
+          opponentScore,
+          opponentName: match.opponentName,
+          result,
+          status: match.isCompleted ? "completed" : "pending",
+        };
+      });
+      setMatches(loadedMatches);
       const cacheData = {
-        matches: matchesData.success ? matchesData.matches : [],
-        scores: scoresData.success ? scoresData.scores : [],
-        stats: statsData.success ? statsData.stats : [],
-        participants: participantsData.success
-          ? participantsData.participants
-          : [], // ✅ Participants 추가
-        moms: momsData.success ? momsData.moms : [], // ✅ MOMs 추가
+        matches: appData.matches,
+        scores: appData.scores,
+        stats: [],
+        participants: appData.participants,
+        moms: appData.moms,
+        goalEvents: appData.goalEvents,
         timestamp: Date.now(),
       };
 
       setCachedGoogleData(cacheData);
-      setShouldRefetch(false); // 다음번에는 캐시 사용
-      console.log("✅ 전역 캐시 저장 완료:", cacheData);
-
-      // MatchListScreen용 매치 데이터 변환
-      if (matchesData.success && matchesData.matches) {
-        const loadedMatches: MatchListItem[] =
-          matchesData.matches.map((match: any) => {
-            // 요일 추출 (UTC 시간대 문제 해결)
-            const dateStr = match["날짜"] || match["matchDate"];
-            const dateOnly = dateStr.split("T")[0]; // ISO 형식 대비 T 앞부분만 사용
-            const [year, month, day] = dateOnly
-              .split("-")
-              .map(Number);
-            const matchDate = new Date(year, month - 1, day); // 로컬 시간대로 생성
-            const dayOfWeek = [
-              "일",
-              "월",
-              "화",
-              "수",
-              "목",
-              "금",
-              "토",
-            ][matchDate.getDay()];
-
-            const ourScore =
-              match["우리팀득점"] || match["ourScore"] || 0;
-            const opponentScore =
-              match["상대팀득점"] ||
-              match["opponentScore"] ||
-              0;
-            let result: "win" | "lose" | "draw" = "draw";
-            if (ourScore > opponentScore) result = "win";
-            else if (ourScore < opponentScore) result = "lose";
-
-            return {
-              id:
-                match["경기ID"] ||
-                match["id"] ||
-                match["날짜"] ||
-                match["matchDate"],
-              date:
-                match["날짜"] || match["matchDate"]
-                  ? (
-                      match["날짜"] || match["matchDate"]
-                    ).replace(/-/g, ".")
-                  : "N/A",
-              dayOfWeek,
-              ourScore,
-              opponentScore,
-              opponentName:
-                match["상대팀"] ||
-                match["opponentName"] ||
-                "상대팀",
-              result,
-              status: "completed" as const,
-            };
-          });
-
-        setMatches(loadedMatches);
-        console.log(
-          "✅ Matches 데이터 로드 완료:",
-          loadedMatches.length,
-          "개",
-        );
-      }
+      setShouldRefetch(false);
+      console.log("✅ Supabase 매치 캐시 저장 완료:", supabaseMatches.length, "개");
 
       console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      console.log("🎉 전역 데이터 로드 완료!");
+      console.log("🎉 Supabase 데이터 로드 완료!");
       console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     } catch (error) {
-      console.error(
-        "❌ Google Sheets 데이터 로드 실패:",
-        error,
-      );
-      // 실패 시 기본 Mock 데이터 유지
+      console.error("❌ Supabase 데이터 로드 실패:", error);
     } finally {
       setIsLoadingCache(false);
     }
   };
 
+  const restoreMatchSelectionFromParticipants = (matchId: string) => {
+    const allParticipants = getParticipants();
+
+    if (allParticipants.length === 0) {
+      return false;
+    }
+
+    const matchParticipants = allParticipants.filter(
+      (p: any) =>
+        p["matchId"] === matchId ||
+        p["경기ID"] === matchId,
+    );
+
+    if (matchParticipants.length === 0) {
+      return false;
+    }
+
+    const regularPlayers = matchParticipants.filter(
+      (p: any) => {
+        const playerId = String(p["playerId"] || "");
+        const playerNumber = String(p["playerNumber"] || "");
+        const playerName = String(
+          p["playerName"] || p["이름"] || "",
+        );
+
+        return (
+          !playerId.startsWith("mercenary_") &&
+          playerNumber !== "GUEST" &&
+          playerName !== "용병없음" &&
+          playerId !== "nomercenary"
+        );
+      },
+    );
+
+    const mercenaryPlayers = matchParticipants.filter(
+      (p: any) => {
+        const playerId = String(p["playerId"] || "");
+        const playerNumber = String(p["playerNumber"] || "");
+
+        return (
+          playerId.startsWith("mercenary_") ||
+          playerNumber === "GUEST"
+        );
+      },
+    );
+
+    const hasNoMercenaryFlag = matchParticipants.some(
+      (p: any) => {
+        const playerId = String(p["playerId"] || "");
+        const playerName = String(
+          p["playerName"] || p["이름"] || "",
+        );
+        return (
+          playerName === "용병없음" ||
+          playerId === "nomercenary"
+        );
+      },
+    );
+
+    const selectedPlayerIds = new Set<string>();
+    regularPlayers.forEach((p: any) => {
+      const playerName = p["이름"] || p["playerName"];
+      const foundPlayer = players.find(
+        (player) => player.name === playerName,
+      );
+      if (foundPlayer) {
+        selectedPlayerIds.add(foundPlayer.id);
+      }
+    });
+
+    const restoredMercenaries: Mercenary[] =
+      mercenaryPlayers.map((p: any, index: number) => ({
+        id: `mercenary_${Date.now()}_${index}_${Math.random()}`,
+        name: p["이름"] || p["playerName"],
+      }));
+
+    setSelectedPlayers(selectedPlayerIds);
+    setMercenaries(restoredMercenaries);
+    setHasNoMercenary(hasNoMercenaryFlag);
+    setCurrentMatchId(matchId);
+
+    return true;
+  };
+
   const handleAddMatch = () => {
-    setShowMatchList(false); // 매치 리스트 닫기
-    setShowMatchRegistration(true);
+    navigateTo({ name: "newMatch" });
   };
 
   const handleMatchRegistrationComplete = () => {
-    // 매치 등록 화면 닫고, 매치 리스트 화면 열기
-    setShowMatchRegistration(false);
-    setShowMatchList(true);
-    setShouldRefetch(true); // ✅ 매치 등록 완료 후 Google Sheets 다시 불러오기
+    navigateTo({ name: "matches" });
+    setShouldRefetch(true);
   };
 
   const handleScoreMatch = (matchId: string) => {
     // 스코어 버튼 클릭 시 선수 선택 화면으로 이동
-    setShowMatchList(false);
-    setShowPlayerSelection(true);
     setCurrentMatchId(matchId); // 현재 득점 입력 중인 매치 ID 설정
     setSelectedPlayers(new Set()); // 선수 선택 초기화
     setMercenaries([]); // ✅ 용병 배열 초기화
     setHasNoMercenary(false); // 용병 설정 초기화
     setIsEditMode(false); // ✅ 새 매치 입력 모드
+    navigateTo({ name: "participants", matchId });
   };
 
   // ✅ 스코어 수정 핸들러 추가
@@ -400,139 +503,11 @@ export default function App() {
       console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
       console.log("📝 스코어 수정 모드 진입");
       console.log("Match ID:", matchId);
-      console.log("🔍 현재 mercenaries 상태:", mercenaries);
-
-      // Participants 데이터 로드
-      const participantsData = await fetchJSONP<{
-        success: boolean;
-        participants: any[];
-      }>(`${GOOGLE_SCRIPT_URL}?action=getParticipants`);
-
-      if (
-        participantsData.success &&
-        participantsData.participants
-      ) {
-        // 해당 매치의 참가자 필터링
-        const matchParticipants =
-          participantsData.participants.filter(
-            (p: any) =>
-              p["matchId"] === matchId ||
-              p["경기ID"] === matchId,
-          );
-
-        console.log(
-          "📊 매치 참가자 데이터 (전체):",
-          matchParticipants,
-        );
-
-        matchParticipants.forEach((p: any, index: number) => {
-          console.log(
-            `🔍 참가자 ${index + 1} JSON:`,
-            JSON.stringify(p, null, 2),
-          );
-          console.log(
-            ` 참가자 ${index + 1} 키:`,
-            Object.keys(p),
-          );
-        });
-
-        // 선수와 용병 분리
-        const regularPlayers = matchParticipants.filter(
-          (p: any) => {
-            const playerId = String(p["playerId"] || "");
-            const playerNumber = String(
-              p["playerNumber"] || "",
-            );
-            const playerName = String(
-              p["playerName"] || p["이름"] || "",
-            );
-
-            // 용병이 아니고, "용병없음"도 아닌 일반 선수만
-            return (
-              !playerId.startsWith("mercenary_") &&
-              playerNumber !== "GUEST" &&
-              playerName !== "용병없음" &&
-              playerId !== "nomercenary"
-            );
-          },
-        );
-
-        const mercenaryPlayers = matchParticipants.filter(
-          (p: any) => {
-            const playerId = String(p["playerId"] || "");
-            const playerNumber = String(
-              p["playerNumber"] || "",
-            );
-
-            // playerId가 "mercenary_"로 시작하거나 playerNumber가 "GUEST"인 경우
-            return (
-              playerId.startsWith("mercenary_") ||
-              playerNumber === "GUEST"
-            );
-          },
-        );
-
-        const hasNoMercenaryFlag = matchParticipants.some(
-          (p: any) => {
-            const playerId = String(p["playerId"] || "");
-            const playerName = String(
-              p["playerName"] || p["이름"] || "",
-            );
-            return (
-              playerName === "용병없음" ||
-              playerId === "nomercenary"
-            );
-          },
-        );
-
-        console.log("📊 일반 선수:", regularPlayers);
-        console.log("📊 용병 선수:", mercenaryPlayers);
-        console.log("📊 용병없음 플래그:", hasNoMercenaryFlag);
-
-        // 선수 ID 세트 복원 (기존 players 배열에서 이름 매칭)
-        const selectedPlayerIds = new Set<string>();
-        regularPlayers.forEach((p: any) => {
-          const playerName = p["이름"] || p["playerName"];
-          const foundPlayer = players.find(
-            (player) => player.name === playerName,
-          );
-          if (foundPlayer) {
-            selectedPlayerIds.add(foundPlayer.id);
-          }
-        });
-
-        // 용병 데이터 복원
-        const restoredMercenaries: Mercenary[] =
-          mercenaryPlayers.map((p: any, index: number) => ({
-            id: `mercenary_${Date.now()}_${index}_${Math.random()}`,
-            name: p["이름"] || p["playerName"],
-          }));
-
-        console.log(
-          "✅ 선수 복원:",
-          Array.from(selectedPlayerIds),
-        );
-        console.log("✅ 용병 복원:", restoredMercenaries);
-        console.log("✅ 용병없음 플래그:", hasNoMercenaryFlag);
-
-        // 상태 복원
-        setSelectedPlayers(selectedPlayerIds);
-        setMercenaries(restoredMercenaries);
-        setHasNoMercenary(hasNoMercenaryFlag);
-        setCurrentMatchId(matchId);
-        setIsEditMode(true);
-
-        console.log(
-          "🔍 복원 후 mercenaries 상태 예상:",
-          restoredMercenaries,
-        );
-
-        // 선수 선택 화면으로 이동 (복원된 데이터로)
-        setShowMatchList(false);
-        setShowPlayerSelection(true);
-
-        console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      }
+      restoreMatchSelectionFromParticipants(matchId);
+      setCurrentMatchId(matchId);
+      setIsEditMode(true);
+      navigateTo({ name: "participants", matchId });
+      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     } catch (error) {
       console.error("❌ 스코어 수정 데이터 로드 실패:", error);
       alert("데이터를 불러오는데 실패했습니다.");
@@ -564,45 +539,15 @@ export default function App() {
     }
   };
 
-  const handleSaveToGoogle = async () => {
+  const handleSaveParticipants = async (forceNoMercenary = hasNoMercenary) => {
     const selected = players.filter((p) =>
       selectedPlayers.has(p.id),
     );
 
-    // Google Sheets로 전송할 데이터 형식 (번호, 이름만)
-    const dataForSheets = selected.map((p) => ({
-      번호: p.number,
-      이름: p.name,
-    }));
-
-    console.log("전송할 데이터:", dataForSheets);
-
     setIsSavingToGoogle(true);
 
     try {
-      // ✅ 1단계: 기존 registerPlayers 요청 (하위 호환성 유지)
-      const response = await fetch(GOOGLE_SCRIPT_URL, {
-        method: "POST",
-        body: JSON.stringify({
-          action: "registerPlayers",
-          players: dataForSheets,
-          matchId: currentMatchId, // 경기 ID 추가
-        }),
-        redirect: "follow",
-      });
-
-      // no-cors 모드에서는 응답을 읽을 수 없으므로 성공으로 간주
-      console.log(
-        "✅ [1/2] Google Sheets에 registerPlayers 데이터 전송 완료!",
-      );
-      console.log(
-        "📊 전송된 데이터:",
-        JSON.stringify({ players: dataForSheets }, null, 2),
-      );
-
-      // ✅ 2단계: Participants 시트에 경기 참가 인원 저장 (선수 + 용병)
       const participantsData = [
-        // 일반 선수
         ...selected.map((p) => ({
           id: `participant_${currentMatchId}_${p.id}_${Date.now()}`,
           matchId: currentMatchId,
@@ -620,8 +565,7 @@ export default function App() {
           playerNumber: "GUEST", // 용병은 번호 없음
           isMercenary: true, // ✅ 용병 여부
         })),
-        // "용병없음" 플래그
-        ...(hasNoMercenary
+        ...(forceNoMercenary
           ? [
               {
                 id: `participant_${currentMatchId}_nomercenary_${Date.now()}`,
@@ -635,61 +579,40 @@ export default function App() {
           : []),
       ];
 
-      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      console.log("📤 [2/2] 경기 참가 인원 데이터 전송 중...");
-      console.log("Participants:", participantsData);
-      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      const otherParticipants = getParticipants().filter(
+        (participant) => participant.matchId !== currentMatchId,
+      );
+      saveParticipants([...otherParticipants, ...participantsData]);
 
-      // ✅ 기존 Participants 데이터 삭제 (중복 방지)
-      await fetch(GOOGLE_SCRIPT_URL, {
-        method: "POST",
-        body: JSON.stringify({
-          action: "deleteMatchParticipants",
-          data: JSON.stringify({ matchId: currentMatchId }),
-        }),
-        redirect: "follow",
-      });
-      console.log("✅ 기존 Participants 데이터 삭제 완료");
-
-      // 새로운 Participants 데이터 저장
-      await fetch(GOOGLE_SCRIPT_URL, {
-        method: "POST",
-        body: JSON.stringify({
-          action: "saveParticipants",
-          data: JSON.stringify(participantsData), // ✅ data 파라미터로 변경
-        }),
-        redirect: "follow",
-      });
-
-      console.log("✅ [2/2] Participants 데이터 전송 완료!");
+      if (currentMatchId && isSupabaseConfigured) {
+        await replaceParticipantsForMatchInSupabase(
+          currentMatchId,
+          participantsData,
+        );
+      }
 
       // 모달 닫고 득점 입력 페이지로 이동
       setShowModal(false);
       setShowMercenaryManagement(false);
-      setShowScoreTracking(true);
+      if (currentMatchId) {
+        navigateTo({ name: "score", matchId: currentMatchId });
+      }
     } catch (error) {
-      // no-cors 모드에서는 실제 요청이 성공해도 에러가 발생할 수 있음
-      // 따라서 네트워크 에러도 성공로 간주
-      console.log(
-        "⚠️ no-cors 모드에서 응답 확인 불가 (정상 동작)",
-      );
-      console.log(
-        "📊 전송 시도한 데이터:",
-        JSON.stringify({ players: dataForSheets }, null, 2),
-      );
-
-      // 모달 닫고 득점 입력 페이지로 이동
-      setShowModal(false);
-      setShowMercenaryManagement(false);
-      setShowScoreTracking(true);
+      console.error("참가자 저장 실패:", error);
+      alert("참가자 저장에 실패했습니다. 다시 시도해주세요.");
     } finally {
       setIsSavingToGoogle(false);
     }
   };
 
+  const isScoreRoute = route.name === "score";
+  const isPlayerSelectionRoute = route.name === "participants";
+  const isMatchListRoute = route.name === "matches";
+  const isMatchRegistrationRoute = route.name === "newMatch";
+
   return (
-    <div className="bg-white relative size-full overflow-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-      {showScoreTracking ? (
+    <div ref={appScrollRef} className="bg-white relative h-screen min-h-screen w-full overflow-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+      {isScoreRoute ? (
         <ScoreTracking
           selectedPlayers={players.filter((p) =>
             selectedPlayers.has(p.id),
@@ -698,14 +621,11 @@ export default function App() {
           matchId={currentMatchId}
           isEditMode={isEditMode} // ✅ 수정 모드 전달
           onBack={() => {
-            setShowScoreTracking(false);
-            setShowPlayerSelection(false); // 선수 선택 화면도 닫기
             setCurrentMatchId(null); // 매치 ID 초기화
             setIsEditMode(false); // ✅ 수정 모드 초기화
-            setShowMatchList(false); // 메인 페이지로 이동
-            setShouldRefetch(true); // ✅ 득점 입력 완료 후 Google Sheets 다시 불러오기
+            setShouldRefetch(true); // ✅ 득점 입력 완료 후 Supabase 다시 불러오기
+            navigateTo({ name: "matches" });
           }}
-          googleScriptUrl={GOOGLE_SCRIPT_URL}
           opponentName={
             currentMatchId
               ? matches.find((m) => m.id === currentMatchId)
@@ -713,7 +633,7 @@ export default function App() {
               : undefined
           }
         />
-      ) : showPlayerSelection ? (
+      ) : isPlayerSelectionRoute ? (
         !showMercenaryManagement ? (
           <div className="bg-white relative size-full overflow-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             {/* Header - Close Button */}
@@ -721,8 +641,9 @@ export default function App() {
               <button
                 onClick={() => {
                   console.log("닫기 버튼 클릭");
-                  setShowPlayerSelection(false);
                   setSelectedPlayers(new Set());
+                  setCurrentMatchId(null);
+                  navigateTo({ name: "matches" });
                 }}
                 className="-translate-y-1/2 absolute content-stretch flex items-center justify-center right-[8px] size-[40px] top-1/2"
               >
@@ -850,9 +771,9 @@ export default function App() {
               <div className="fixed backdrop-blur-[2.5px] bg-[rgba(255,255,255,0.5)] bottom-0 left-0 right-0 content-stretch flex flex-col items-start pb-[48px] pt-[16px] px-[20px] border-t border-[rgba(255,255,255,0.5)] animate-[slideUp_0.3s_ease-out]">
                 <button
                   onClick={handleSave}
-                  disabled={isSaving}
+                  disabled={isSavingToGoogle}
                   className={`w-full h-[52px] rounded-[8px] font-medium text-[18px] transition-all ${
-                    isSaving
+                    isSavingToGoogle
                       ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                       : "bg-[#242b35] text-white hover:bg-[#1a2129]"
                   }`}
@@ -860,35 +781,12 @@ export default function App() {
                     fontFamily: "var(--font-paperlogy)",
                   }}
                 >
-                  {isSaving
+                  {isSavingToGoogle
                     ? "저장 중..."
                     : isEditMode
                       ? "다음"
                       : "저장"}
                 </button>
-              </div>
-            )}
-
-            {/* Success Message */}
-            {showSuccess && (
-              <div className="fixed top-[50%] left-[50%] -translate-x-1/2 -translate-y-1/2 bg-[#242b35] text-white px-6 py-4 rounded-lg shadow-lg z-50">
-                <p
-                  className="font-semibold text-[16px]"
-                  style={{
-                    fontFamily: "var(--font-pretendard)",
-                  }}
-                >
-                  {selectedPlayers.size}명의 선수가
-                  선택되었습니다!
-                </p>
-                <p
-                  className="text-[14px] text-gray-300 mt-1"
-                  style={{
-                    fontFamily: "var(--font-pretendard)",
-                  }}
-                >
-                  콘솔에서 데이터를 확인하세요
-                </p>
               </div>
             )}
 
@@ -901,7 +799,7 @@ export default function App() {
                 }}
                 onNoMercenary={() => {
                   setHasNoMercenary(true);
-                  handleSaveToGoogle(); // "없어요" 버튼 클릭 시 저장
+                  handleSaveParticipants(true); // "없어요" 버튼 클릭 시 저장
                 }}
                 onAddMercenary={() => {
                   setShowModal(false);
@@ -917,7 +815,7 @@ export default function App() {
             isSaving={isSavingToGoogle}
             onBack={() => setShowMercenaryManagement(false)}
             onNext={() => {
-              handleSaveToGoogle(); // "다음" 버튼 클릭 시 저장
+              handleSaveParticipants(false); // "다음" 버튼 클릭 시 저장
             }}
             opponentName={
               currentMatchId
@@ -927,11 +825,11 @@ export default function App() {
             }
           />
         )
-      ) : showMatchList ? (
+      ) : isMatchListRoute ? (
         <MatchListScreen
           onBack={() => {
-            setShowMatchList(false);
             setShouldRefetch(true); // ✅ 매치 리스트에서 메인으로 돌아갈 때 데이터 새로고침
+            navigateTo({ name: "home" });
           }}
           onAddMatch={handleAddMatch}
           onScoreMatch={handleScoreMatch}
@@ -940,20 +838,17 @@ export default function App() {
             console.log(
               "🏆 MOM 저장 완료 - 데이터 새로고침 트리거",
             );
-            setShouldRefetch(true); // ✅ MOM 선정 완료 후 Google Sheets 다시 불러오기
+            setShouldRefetch(true); // ✅ MOM 선정 완료 후 Supabase 다시 불러오기
           }}
-          googleScriptUrl={GOOGLE_SCRIPT_URL}
         />
-      ) : showMatchRegistration ? (
+      ) : isMatchRegistrationRoute ? (
         <MatchRegistration
           onComplete={handleMatchRegistrationComplete}
-          onCancel={() => setShowMatchRegistration(false)}
-          googleScriptUrl={GOOGLE_SCRIPT_URL}
+          onCancel={() => navigateTo({ name: "matches" })}
         />
       ) : (
         <MainScreen
-          onNavigateToMatches={() => setShowMatchList(true)}
-          googleScriptUrl={GOOGLE_SCRIPT_URL}
+          onNavigateToMatches={() => navigateTo({ name: "matches" })}
           cachedData={cachedGoogleData} // ✅ 캐시 데이터 전달
           isLoadingCache={isLoadingCache} // ✅ 로딩 상태 전달
         />

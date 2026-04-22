@@ -4,6 +4,8 @@ import MatchRegistrationStep2, { MatchRegistrationStep2Data } from "./MatchRegis
 import MatchRegistrationStep3, { MatchRegistrationStep3Data } from "./MatchRegistrationStep3";
 import { generateId, addMatch } from "../utils/storage";
 import { Match } from "../types/data";
+import { isSupabaseConfigured } from "../lib/supabase";
+import { saveMatchToSupabase } from "../services/supabaseMatches";
 
 export interface MatchData extends MatchRegistrationStep1Data, MatchRegistrationStep2Data, MatchRegistrationStep3Data {
   id: string;
@@ -16,10 +18,9 @@ export interface MatchData extends MatchRegistrationStep1Data, MatchRegistration
 interface MatchRegistrationProps {
   onComplete: () => void; // 완료 시 화면 전환만 수행
   onCancel: () => void;
-  googleScriptUrl: string;
 }
 
-export default function MatchRegistration({ onComplete, onCancel, googleScriptUrl }: MatchRegistrationProps) {
+export default function MatchRegistration({ onComplete, onCancel }: MatchRegistrationProps) {
   const [currentStep, setCurrentStep] = useState(1);
   const [step1Data, setStep1Data] = useState<MatchRegistrationStep1Data | null>(null);
   const [step2Data, setStep2Data] = useState<MatchRegistrationStep2Data | null>(null);
@@ -58,67 +59,15 @@ export default function MatchRegistration({ onComplete, onCancel, googleScriptUr
         createdAt: new Date().toISOString(),
       };
 
-      // LocalStorage에 저장
-      addMatch(newMatch);
-
-      // 구글 시트에 매치 등록 요청 (완전한 정보 전송)
-      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      console.log("📤 구글 시트에 매치 저장 시작...");
-      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      console.log("📤 매치 데이터:", {
-        id: newMatch.id,
-        matchType: newMatch.matchType,
-        playerCount: newMatch.playerCount,
-        quarterCount: newMatch.quarterCount,
-        quarterTime: newMatch.quarterTime,
-        matchDate: newMatch.matchDate,
-        startTime: newMatch.startTime,
-        endTime: newMatch.endTime,
-        location: newMatch.location,
-        locationLink: newMatch.locationLink,
-        opponentName: newMatch.opponentName,
-        isCompleted: newMatch.isCompleted,
-        ourScore: 0,
-        opponentScore: 0,
-        createdAt: newMatch.createdAt,
-      });
-
-      try {
-        const response = await fetch(googleScriptUrl, {
-          method: "POST",
-          mode: "no-cors",
-          headers: {
-            "Content-Type": "text/plain;charset=utf-8",
-          },
-          body: JSON.stringify({
-            action: "saveMatch",
-            data: JSON.stringify({
-              id: newMatch.id,
-              matchType: newMatch.matchType,
-              playerCount: newMatch.playerCount,
-              quarterCount: newMatch.quarterCount,
-              quarterTime: newMatch.quarterTime,
-              matchDate: newMatch.matchDate,
-              startTime: newMatch.startTime,
-              endTime: newMatch.endTime,
-              location: newMatch.location,
-              locationLink: newMatch.locationLink,
-              opponentName: newMatch.opponentName,
-              isCompleted: newMatch.isCompleted,
-              ourScore: 0,
-              opponentScore: 0,
-              createdAt: newMatch.createdAt,
-            }),
-          }),
-        });
-
-        console.log("✅ 구글 시트 응답: 전송 완료 (no-cors 모드)");
-        console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      } catch (error) {
-        console.error("❌ 구글 시트 저장 실패:", error);
-        console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      if (!isSupabaseConfigured) {
+        throw new Error("Supabase 설정이 없습니다. .env.local을 확인해주세요.");
       }
 
+      await saveMatchToSupabase(newMatch);
+      console.log("✅ Supabase 매치 저장 완료");
+
+      // LocalStorage는 화면 갱신용 캐시로만 사용
+      addMatch(newMatch);
       console.log("✅ 매치 정보 저장 완료:", newMatch);
 
       // 매치 등록 완료 - 화면만 전환
@@ -140,7 +89,7 @@ export default function MatchRegistration({ onComplete, onCancel, googleScriptUr
   };
 
   return (
-    <>
+    <div className="fixed inset-0 z-30 bg-white h-screen min-h-screen w-full overflow-hidden">
       {currentStep === 1 && (
         <MatchRegistrationStep1
           onNext={handleStep1Next}
@@ -163,6 +112,6 @@ export default function MatchRegistration({ onComplete, onCancel, googleScriptUr
           onClose={onCancel}
         />
       )}
-    </>
+    </div>
   );
 }

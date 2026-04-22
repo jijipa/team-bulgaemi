@@ -4,7 +4,6 @@ import {
   getPlayers,
   getScoresByMatchId,
 } from "../utils/storage";
-import { fetchJSONP } from "../utils/jsonp";
 import svgPaths from "../../imports/svg-fnwogjyv26";
 import soccerBallSvg from "../../imports/svg-aypr951miv";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
@@ -46,31 +45,26 @@ export interface PlayerStats {
 
 interface MainScreenProps {
   onNavigateToMatches: () => void;
-  googleScriptUrl?: string; // Google Sheets URL 추가
   cachedData?: any; // ✅ 캐시 데이터 추가
   isLoadingCache?: boolean; // ✅ 로딩 상태 추가
 }
 
 export default function MainScreen({
   onNavigateToMatches,
-  googleScriptUrl,
   cachedData,
   isLoadingCache,
 }: MainScreenProps) {
-  const [googleMatches, setGoogleMatches] = useState<Match[]>(
+  const [remoteMatches, setRemoteMatches] = useState<Match[]>(
     [],
   );
-  const [googlePlayerStats, setGooglePlayerStats] = useState<
-    PlayerStats[]
-  >([]);
-  const [googleScores, setGoogleScores] = useState<any[]>([]); // Google Sheets Scores 데이터 저장
-  const [googleParticipants, setGoogleParticipants] = useState<
+  const [remoteScores, setRemoteScores] = useState<any[]>([]); // Supabase Scores 데이터 저장
+  const [remoteParticipants, setRemoteParticipants] = useState<
     any[]
-  >([]); // ✅ Google Sheets Participants 데이터 저장
-  const [googleMOMs, setGoogleMOMs] = useState<any[]>([]); // ✅ Google Sheets MOM 데이터 저장
+  >([]); // ✅ Supabase Participants 데이터 저장
+  const [remoteMOMs, setRemoteMOMs] = useState<any[]>([]); // ✅ Supabase MOM 데이터 저장
 
-  // ✅ 이제 Google Sheets 데이터는 캐시에서 불러오므로, 로딩 상태는 props로 받은 isLoadingCache 사용
-  const isLoadingGoogle =
+  // ✅ 이제 Supabase 데이터는 캐시에서 불러오므로, 로딩 상태는 props로 받은 isLoadingCache 사용
+  const isLoadingRemote =
     isLoadingCache !== undefined ? isLoadingCache : true;
 
   // 실제 데이터 로드 (기존 로컬 스토리지)
@@ -80,353 +74,14 @@ export default function MainScreen({
     isLoading,
   } = useMatchData();
 
-  // Google Sheets 데이터 로드 함수
-  const loadGoogleSheetsData = async () => {
-    if (!googleScriptUrl) return;
-
-    try {
-      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      console.log(
-        "📊 Google Sheets에서 메인 화면 데이터 로드 시작",
-      );
-      console.log("🔗 Google Script URL:", googleScriptUrl);
-      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-
-      // JSONP 방식으로 Matches 데이터 로드
-      console.log("📤 요청: getMatches");
-      const matchesData = await fetchJSONP<{
-        success: boolean;
-        matches: any[];
-      }>(`${googleScriptUrl}?action=getMatches`);
-      console.log("📥 응답 (Matches):", matchesData);
-
-      // JSONP 방식으로 Scores 데이터 로드 (득점자 정보)
-      let scoresData: any = null;
-      try {
-        console.log("📤 요청: getScores");
-        scoresData = await fetchJSONP<{
-          success: boolean;
-          scores: any[];
-        }>(`${googleScriptUrl}?action=getScores`);
-        console.log("📥 응답 (Scores):", scoresData);
-        setGoogleScores(scoresData.scores); // Scores 데이터 저장
-      } catch (error) {
-        console.log("⚠️ Scores 데이터 없음 (선택사항)");
-      }
-
-      // ✅ JSONP 방식으로 Participants 데이터 로드 (경기 참가 선수 정보)
-      let participantsData: any = null;
-      try {
-        console.log("📤 요청: getParticipants");
-        participantsData = await fetchJSONP<{
-          success: boolean;
-          participants: any[];
-        }>(`${googleScriptUrl}?action=getParticipants`);
-        console.log(
-          "📥 응답 (Participants):",
-          participantsData,
-        );
-        setGoogleParticipants(participantsData.participants); // Participants 데이터 저장
-      } catch (error) {
-        console.log("⚠️ Participants 데이터 없음 (선택사항)");
-      }
-
-      // ✅ JSONP 방식으로 MOM 데이터 로드 (MOM 선수 정보)
-      let momsData: any = null;
-      try {
-        console.log("📤 요청: getMOMs");
-        momsData = await fetchJSONP<{
-          success: boolean;
-          moms: any[];
-        }>(`${googleScriptUrl}?action=getMOMs`);
-        console.log("📥 응답 (MOMs):", momsData);
-        setGoogleMOMs(momsData.moms); // MOM 데이터 저장
-      } catch (error) {
-        console.log("⚠️ MOM 데이터 없음 (선택사항)");
-      }
-
-      if (matchesData.success && matchesData.matches) {
-        console.log(
-          "✅ Matches 데이터 존재:",
-          matchesData.matches.length,
-          "개",
-        );
-
-        // Google Sheets 매치 데이터를 Match 형식으로 변환
-        const loadedMatches: Match[] = matchesData.matches.map(
-          (match: any, index: number) => {
-            console.log(`🔍 매치 ${index} 원본 데이터:`, match);
-
-            // ✅ imageUrl 디버깅 강화
-            const rawImageUrl =
-              match["imageUrl"] || match["이미지"] || "";
-            console.log(
-              `📷 매치 ${index} imageUrl (raw):`,
-              rawImageUrl,
-            );
-            console.log(
-              `📷 매치 ${index} imageUrl (type):`,
-              typeof rawImageUrl,
-            );
-            console.log(
-              `📷 매치 ${index} imageUrl (length):`,
-              rawImageUrl.length,
-            );
-
-            // Google Drive URL을 직접 링크로 변환
-            let processedImageUrl = rawImageUrl;
-            if (
-              rawImageUrl &&
-              rawImageUrl.includes("drive.google.com")
-            ) {
-              // Google Drive 공유 링크를 직접 링크로 변환
-              // 예: https://drive.google.com/file/d/FILE_ID/view?usp=sharing
-              // -> https://drive.google.com/uc?export=view&id=FILE_ID
-              const fileIdMatch = rawImageUrl.match(
-                /\/d\/([a-zA-Z0-9_-]+)/,
-              );
-              if (fileIdMatch && fileIdMatch[1]) {
-                processedImageUrl = `https://drive.google.com/uc?export=view&id=${fileIdMatch[1]}`;
-                console.log(
-                  `🔄 Google Drive URL 변환: ${rawImageUrl} -> ${processedImageUrl}`,
-                );
-              } else {
-                console.log(
-                  `⚠️ Google Drive URL 파싱 실패:`,
-                  rawImageUrl,
-                );
-              }
-            }
-            console.log(
-              `📷 매치 ${index} imageUrl (processed):`,
-              processedImageUrl,
-            );
-
-            // 날짜 파싱: ISO 형식 또는 YYYY-MM-DD 형식을 YYYY.MM.DD로 변환
-            let formattedDate = "N/A";
-            if (match["matchDate"] || match["날짜"]) {
-              let dateStr = match["matchDate"] || match["날짜"];
-
-              // Date 객체인 경우 로컬 시간대로 변환 (UTC 문제 해결)
-              if (dateStr instanceof Date) {
-                const year = dateStr.getFullYear();
-                const month = String(
-                  dateStr.getMonth() + 1,
-                ).padStart(2, "0");
-                const day = String(dateStr.getDate()).padStart(
-                  2,
-                  "0",
-                );
-                dateStr = `${year}-${month}-${day}`;
-              } else if (typeof dateStr !== "string") {
-                dateStr = String(dateStr);
-              }
-
-              console.log(
-                `  📅 날짜 원본: "${dateStr}" (타입: ${typeof dateStr})`,
-              );
-
-              // ISO 형식 (2026-02-05T15:00:00.000Z) 처리 - UTC 시간대 문제 해결!
-              if (dateStr.includes("T")) {
-                // ISO 형식을 Date 객체로 변환 후 로컬 날짜 추출
-                const isoDate = new Date(dateStr);
-                const year = isoDate.getFullYear();
-                const month = String(
-                  isoDate.getMonth() + 1,
-                ).padStart(2, "0");
-                const day = String(isoDate.getDate()).padStart(
-                  2,
-                  "0",
-                );
-                formattedDate = `${year}.${month}.${day}`;
-              } else if (dateStr.includes("-")) {
-                // YYYY-MM-DD 형식
-                formattedDate = dateStr.replace(/-/g, ".");
-              } else {
-                // 이미 YYYY.MM.DD 형식
-                formattedDate = dateStr;
-              }
-              console.log(`  📅 날짜 변환: "${formattedDate}"`);
-            }
-
-            // ✅ Google Sheets에 저장된 원본 ID 사용!
-            const uniqueId =
-              match["id"] ||
-              match["matchId"] ||
-              match["경기ID"] ||
-              `google_match_${Date.now()}_${index}`;
-            console.log(`  🆔 매치 ID: "${uniqueId}"`);
-
-            // 해당 매치의 득점자 찾기
-            const scorers: Array<{
-              name: string;
-              goals: number;
-            }> = [];
-            let ownGoals = 0; // ✅ 자책골 카운트 추가
-            if (scoresData?.success && scoresData.scores) {
-              const matchScores = scoresData.scores.filter(
-                (score: any) =>
-                  score["matchId"] === uniqueId ||
-                  score["경기ID"] === uniqueId,
-              );
-              console.log(
-                `  ⚽ 매치 ${uniqueId}의 득점 기록:`,
-                matchScores,
-              );
-              const scorerSet = new Set<string>();
-              let registeredPlayerGoals = 0; // ✅ 등록 선수 골 카운트
-              let mercenaryGoals = 0; // ✅ 용병 골 카운트
-              
-              matchScores.forEach((score: any) => {
-                const goals = score["goals"] || score["골"];
-                const playerName = score["playerName"] || score["이름"];
-                const playerId = String(score["playerId"] ?? score["선수ID"] ?? "").toLowerCase(); // ✅ ?? 사용 + 소문자 변환
-
-                console.log(
-                  `  🔍 득점자 확인: playerId="${playerId}", playerName="${playerName}", 골: ${goals}`,
-                );
-
-                // ✅ 1. playerId가 "opponent"인 경우 → 상대팀 득점 (제외)
-                if (playerId === "opponent") {
-                  console.log(`  🔴 상대팀 득점 스킵: ${playerName}`);
-                  return;
-                }
-
-                if (!goals || goals <= 0) {
-                  return; // 골이 없으면 스킵
-                }
-
-                // ✅ 2. playerId가 "0"인 경우 → 자책골
-                if (playerId === "0") {
-                  ownGoals += goals;
-                  console.log(`  🥅 자책골 감지: ${goals}개`);
-                }
-                // ✅ 3. playerId가 숫자 (0이 아닌)인 경우 → 등록 선수 골
-                else if (!isNaN(Number(playerId)) && Number(playerId) > 0) {
-                  const name = String(playerName ?? "").trim();
-                  scorerSet.add(name);
-                  scorers.push({
-                    name: name,
-                    goals: goals,
-                  });
-                  registeredPlayerGoals += goals;
-                  console.log(`  ⚽ 등록 선수 골: ${name} ${goals}개`);
-                }
-                // ✅ 4. 나머지는 모두 용병 골 (mercenary_1, mercenary_2 등)
-                else if (playerId && playerId.startsWith("mercenary_")) {
-                  mercenaryGoals += goals;
-                  console.log(`  👥 용병 골 감지: ${goals}개`);
-                }
-              });
-              
-              // ✅ 자책골이 있으면 추가
-              if (ownGoals > 0) {
-                scorers.push({
-                  name: "자책골",
-                  goals: ownGoals,
-                });
-              }
-              
-              // ✅ 용병 골이 있으면 추가
-              if (mercenaryGoals > 0) {
-                scorers.push({
-                  name: "용병",
-                  goals: mercenaryGoals,
-                });
-              }
-              
-              console.log(`  👤 득점자 상세:`, JSON.stringify(scorers, null, 2));
-              console.log(`  🥅 자책골:`, ownGoals);
-              console.log(`  👥 용병 골:`, mercenaryGoals);
-              console.log(`  ⚽ 등록 선수 골:`, registeredPlayerGoals);
-            }
-
-            const transformedMatch = {
-              id: uniqueId,
-              date: formattedDate,
-              ourScore:
-                match["ourScore"] || match["우리팀득점"] || 0,
-              opponentScore:
-                match["opponentScore"] ||
-                match["상대팀득점"] ||
-                0,
-              opponentName:
-                match["opponentName"] ||
-                match["상대팀"] ||
-                "상대팀",
-              scorers: scorers,
-              ownGoals: ownGoals, // ✅ 자책골 정보 추가
-              imageUrl:
-                processedImageUrl || DEFAULT_MATCH_IMAGE, // ✅ Google Sheets imageUrl 사용
-            };
-            console.log(`  ✅ 변환된 매치:`, transformedMatch);
-
-            return transformedMatch;
-          },
-        );
-
-        setGoogleMatches(loadedMatches);
-        console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        console.log(
-          "✅ Google Sheets 매치 데이터 로드 완료:",
-          loadedMatches.length,
-          "개",
-        );
-        console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      } else {
-        console.warn(
-          "⚠️ Matches 데이터 없음 또는 success=false",
-        );
-      }
-
-      // JSONP 방식으로 PlayerStats 데이터 로드 (에 무시)
-      try {
-        console.log("📤 요청: getPlayerStats");
-        const statsData = await fetchJSONP<{
-          success: boolean;
-          stats: any[];
-        }>(`${googleScriptUrl}?action=getPlayerStats`);
-        console.log("📥 응답 (PlayerStats):", statsData);
-
-        if (statsData.success && statsData.stats) {
-          // Google Sheets 선수 통계를 PlayerStats 형식으로 환
-          const loadedStats: PlayerStats[] =
-            statsData.stats.map((stat: any) => ({
-              id: stat["이름"], // ID로 이름 사용
-              number: "?", // 번호는 나중에
-              name: stat["이름"],
-              goals: stat["골"] || 0,
-              assists: stat["도움"] || 0,
-              momCount: 0, // MOM은 나중에
-              matchCount: 1, // 경기 수는 나중에 계산
-            }));
-
-          setGooglePlayerStats(loadedStats);
-          console.log(
-            "✅ Google Sheets 선수 통계 로드 완료:",
-            loadedStats,
-          );
-        }
-      } catch (error) {
-        console.log("⚠️ PlayerStats 데이터 없음 (선택사항)");
-      }
-    } catch (error) {
-      console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      console.error("❌ Google Sheets 데이터 로드 실패:");
-      console.error("Error:", error);
-      console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    }
-    // ✅ finally 블록 제거: 로딩 상태는 App.tsx에서 관리
-  };
-
-  // Google Sheets에서 데이터 로드
+  // Supabase에서 가져온 캐시 데이터 로드
   useEffect(() => {
     // ✅ 캐시 데이터가 있으면 캐시 사용, 없으면 직접 로드
     if (cachedData) {
       console.log("⚡ 캐시 데이터 사용:", cachedData);
-      setGoogleScores(cachedData.scores || []);
-      setGoogleParticipants(cachedData.participants || []);
-      setGoogleMOMs(cachedData.moms || []);
+      setRemoteScores(cachedData.scores || []);
+      setRemoteParticipants(cachedData.participants || []);
+      setRemoteMOMs(cachedData.moms || []);
 
       // ✅ 캐시된 matches 데이터 변환
       if (cachedData.matches && cachedData.matches.length > 0) {
@@ -539,30 +194,26 @@ export default function MainScreen({
               scorers: scorers,
               ownGoals: ownGoals, // ✅ 자책골 정보 추가
               imageUrl:
-                match["imageUrl"] || DEFAULT_MATCH_IMAGE, // ✅ Google Sheets imageUrl 사용
+                match["imageUrl"] || DEFAULT_MATCH_IMAGE, // ✅ Supabase imageUrl 사용
             };
           },
         );
 
-        setGoogleMatches(loadedMatches);
+        setRemoteMatches(loadedMatches);
         console.log(
           "✅ 캐시에서 매치 데이터 로드:",
           loadedMatches.length,
           "개",
         );
       }
-    } else if (googleScriptUrl) {
-      // 캐시가 없으면 직접 로드
-      loadGoogleSheetsData();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [googleScriptUrl, cachedData]);
+  }, [cachedData]);
 
-  // ✅ Google Sheets 데이터 우선 사용! (모든 디바이스에서 동일한 데이터)
+  // ✅ Supabase 캐시 데이터 우선 사용! (모든 디바이스에서 동일한 데이터)
   // ✅ 최신순 정렬: 날짜 기준 내림차순
   const matches: Match[] =
-    googleMatches.length > 0
-      ? googleMatches.sort((a, b) => {
+    remoteMatches.length > 0
+      ? remoteMatches.sort((a, b) => {
           // 날짜 문자열을 Date 객체로 변환하여 비교
           const dateA = new Date(a.date.replace(/\./g, "-"));
           const dateB = new Date(b.date.replace(/\./g, "-"));
@@ -694,8 +345,8 @@ export default function MainScreen({
 
   console.log("🎯 최종 매치 배열:", matches);
 
-  // ✅ Google Sheets MOM 데이터 사용
-  const momRecords: MOMRecord[] = googleMOMs.map((mom: any) => {
+  // ✅ Supabase MOM 데이터 사용
+  const momRecords: MOMRecord[] = remoteMOMs.map((mom: any) => {
     // 날짜 형식 변환: YYYY.MM.DD 또는 YYYY-MM-DD -> YY.MM.DD
     let formattedDate =
       mom["matchDate"] || mom["경기날짜"] || "";
@@ -788,7 +439,7 @@ export default function MainScreen({
   // 실제 선수 통계 데이터 변환 (기존 UI 형식에 맞춤)
   const allPlayers = getPlayers(); // LocalStorage에서 33명 전체 선수 데이터 가져오기
 
-  // ✅ Google Sheets Scores & Participants 데이터를 기반으로 리더보드 생성!
+  // ✅ Supabase Scores & Participants 데이터를 기반으로 리더보드 생성!
   const playerStats: PlayerStats[] = allPlayers.map(
     (player) => {
       let goals = 0;
@@ -796,17 +447,17 @@ export default function MainScreen({
       let matchCount = 0;
       let momCount = 0; // ✅ MOM 카운트 초기화
 
-      // Google Sheets 데이터에서 직접 계산 (undefined 체크 추가!)
+      // Supabase 데이터에서 직접 계산 (undefined 체크 추가!)
       if (
-        (googleScores && googleScores.length > 0) ||
-        (googleParticipants && googleParticipants.length > 0)
+        (remoteScores && remoteScores.length > 0) ||
+        (remoteParticipants && remoteParticipants.length > 0)
       ) {
         console.log(`🔍 ${player.name}의 통계 계산 중...`);
 
         // Scores 데이터에서 골/도움 계산
         const playerScores =
-          googleScores && googleScores.length > 0
-            ? googleScores.filter(
+          remoteScores && remoteScores.length > 0
+            ? remoteScores.filter(
                 (score: any) =>
                   score["playerName"] === player.name ||
                   score["이름"] === player.name,
@@ -825,11 +476,11 @@ export default function MainScreen({
 
         // ✅ Participants 데이터에서 경기 수 계산 (모든 참가 선수 포함!)
         if (
-          googleParticipants &&
-          googleParticipants.length > 0
+          remoteParticipants &&
+          remoteParticipants.length > 0
         ) {
           const playerParticipations =
-            googleParticipants.filter(
+            remoteParticipants.filter(
               (participant: any) =>
                 participant["playerName"] === player.name ||
                 participant["이름"] === player.name,
@@ -850,8 +501,8 @@ export default function MainScreen({
         }
 
         // ✅ MOM 데이터에서 MOM 카운트 계산
-        if (googleMOMs && googleMOMs.length > 0) {
-          googleMOMs.forEach((mom: any) => {
+        if (remoteMOMs && remoteMOMs.length > 0) {
+          remoteMOMs.forEach((mom: any) => {
             const playerIds = mom["playerIds"] || mom["playerId"] || [];
             const playerIdArray = Array.isArray(playerIds)
               ? playerIds
@@ -1082,7 +733,7 @@ export default function MainScreen({
           {/* Match Cards - Horizontal Scroll */}
           <div className="relative shrink-0 w-full">
             <div className="content-stretch flex gap-[12px] items-center px-[20px] overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-              {isLoadingGoogle || isLoading ? (
+              {isLoadingRemote || isLoading ? (
                 <>
                   <MatchCardSkeleton />
                   <MatchCardSkeleton />
@@ -1248,7 +899,7 @@ export default function MainScreen({
           </div>
           <div className="content-stretch flex flex-col items-start relative shrink-0 w-full overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             <div className="content-stretch flex gap-[8px] items-center relative shrink-0 px-[20px]">
-              {isLoadingGoogle ? (
+              {isLoadingRemote ? (
                 <>
                   <MOMCardSkeleton />
                   <MOMCardSkeleton />
@@ -1376,7 +1027,7 @@ export default function MainScreen({
           </div>
 
           {/* Table Rows */}
-          {isLoadingGoogle ? (
+          {isLoadingRemote ? (
             <>
               <LeaderboardRowSkeleton />
               <LeaderboardRowSkeleton />

@@ -157,7 +157,12 @@ export default function MercenaryManagement({ mercenaries, setMercenaries, isSav
 
       {/* Header - Close Button */}
       <div className="absolute h-[48px] left-0 right-0 top-[24px] z-20">
-        <div className="-translate-y-1/2 absolute content-stretch flex items-center justify-center right-[8px] size-[40px] top-1/2">
+        <button
+          onClick={onBack}
+          disabled={isSaving}
+          className="-translate-y-1/2 absolute content-stretch flex items-center justify-center right-[8px] size-[40px] top-1/2 disabled:opacity-50 disabled:cursor-not-allowed"
+          aria-label="용병 관리 닫기"
+        >
           <div className="flex items-center justify-center relative shrink-0">
             <div className="flex-none rotate-180">
               <div className="relative size-[24px]">
@@ -175,7 +180,7 @@ export default function MercenaryManagement({ mercenaries, setMercenaries, isSav
               </div>
             </div>
           </div>
-        </div>
+        </button>
       </div>
 
       {/* vs Opponent Name */}
