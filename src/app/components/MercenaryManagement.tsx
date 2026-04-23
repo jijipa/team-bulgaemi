@@ -212,7 +212,7 @@ export default function MercenaryManagement({ mercenaries, setMercenaries, isSav
         </div>
 
         {/* Mercenary List */}
-        <div className="content-stretch flex flex-col gap-[16px] items-start relative shrink-0 w-full mb-[150px]">
+        <div className="content-stretch flex flex-col gap-[16px] items-start relative shrink-0 w-full mb-[126px]">
           <div className="content-stretch flex flex-col gap-[4px] items-start relative shrink-0 w-full">
             <AnimatePresence mode="popLayout">
               {mercenaries.map((mercenary, index) => (
@@ -231,7 +231,7 @@ export default function MercenaryManagement({ mercenaries, setMercenaries, isSav
                 >
                   {editingId === mercenary.id ? (
                     // Editing mode
-                    <div className="bg-white relative rounded-[12px] shrink-0 w-full border border-[#242b35] shadow-[0px_0px_44px_0px_rgba(0,0,0,0.1)]" style={{ position: 'relative', zIndex: 100 }}>
+                    <div className="bg-white relative rounded-[12px] shrink-0 w-full border shadow-[0px_0px_44px_0px_rgba(0,0,0,0.1)]" style={{ position: 'relative', zIndex: 100, borderColor: '#242B35' }}>
                       <div className="flex flex-row items-center size-full">
                         <div className="content-stretch flex items-center justify-between pl-[12px] pr-[16px] py-[12px] relative w-full gap-[8px]">
                           <div className="content-stretch flex gap-[8px] items-center relative shrink-0 flex-1 min-w-0">
@@ -312,7 +312,7 @@ export default function MercenaryManagement({ mercenaries, setMercenaries, isSav
       </div>
 
       {/* Bottom Buttons */}
-      <div className="fixed backdrop-blur-[2.5px] bg-[rgba(255,255,255,0.5)] bottom-0 left-0 right-0 content-stretch flex flex-col items-start pb-[48px] pt-[16px] px-[20px] border-t border-[rgba(255,255,255,0.5)]">
+      <div className="fixed backdrop-blur-[2.5px] bg-[rgba(255,255,255,0.5)] bottom-0 left-0 right-0 content-stretch flex flex-col items-start pb-[24px] pt-[16px] px-[20px] border-t border-[rgba(255,255,255,0.5)]">
         <div className="content-stretch flex gap-[8px] items-start relative shrink-0 w-full">
           <button
             onClick={onBack}

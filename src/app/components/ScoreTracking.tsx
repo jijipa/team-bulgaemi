@@ -1100,7 +1100,7 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
       </div>
 
       {/* Bottom Button */}
-      <div className="fixed backdrop-blur-[2.5px] bg-[rgba(255,255,255,0.5)] bottom-0 left-0 right-0 content-stretch flex flex-col items-start pb-[48px] pt-[16px] px-[20px] border-t border-[rgba(255,255,255,0.5)]">
+      <div className="fixed backdrop-blur-[2.5px] bg-[rgba(255,255,255,0.5)] bottom-0 left-0 right-0 content-stretch flex flex-col items-start pb-[24px] pt-[16px] px-[20px] border-t border-[rgba(255,255,255,0.5)]">
         {currentQuarter === registeredQuarterCount ? (
           <button 
             onClick={handleFinalScoreSave}

@@ -5,7 +5,9 @@ interface MatchActionsSheetProps {
   onDelete: () => void;
   onEdit: () => void;
   onMOM: () => void;
+  onImage: () => void;
   hasMom?: boolean;
+  hasImage?: boolean;
   canSelectMom?: boolean;
 }
 
@@ -14,7 +16,9 @@ export default function MatchActionsSheet({
   onDelete,
   onEdit,
   onMOM,
+  onImage,
   hasMom,
+  hasImage,
   canSelectMom = true,
 }: MatchActionsSheetProps) {
   return (
@@ -74,6 +78,18 @@ export default function MatchActionsSheet({
               </div>
             </button>
           )}
+
+          {/* 이미지 등록/수정 */}
+          <button
+            onClick={onImage}
+            className="relative shrink-0 w-full hover:bg-gray-50 active:bg-gray-100 transition-colors"
+          >
+            <div className="content-stretch flex items-start px-[20px] py-[16px] relative w-full">
+              <p className="font-semibold leading-[normal] not-italic relative shrink-0 text-[#1a1a1c] text-[18px] text-center" style={{ fontFamily: 'var(--font-pretendard)' }}>
+                {hasImage ? "이미지 수정" : "이미지 등록"}
+              </p>
+            </div>
+          </button>
         </div>
       </motion.div>
     </>

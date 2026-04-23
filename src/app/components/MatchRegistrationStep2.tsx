@@ -211,7 +211,7 @@ export default function MatchRegistrationStep2({ onNext, onBack, onClose }: Matc
       </div>
 
       {/* Main Content */}
-      <div className="absolute bottom-[116px] content-stretch flex flex-col gap-[24px] items-start left-0 right-0 top-[112px] w-full overflow-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+      <div className="absolute bottom-[92px] content-stretch flex flex-col gap-[24px] items-start left-0 right-0 top-[112px] w-full overflow-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         {/* Title */}
         <div className="content-stretch flex flex-col items-start pl-[20px] relative shrink-0">
           <p className="leading-[32px] not-italic relative shrink-0 text-[#242b35] text-[24px] tracking-[-0.48px]" style={{ fontFamily: 'var(--font-pretendard)', fontWeight: 700 }}>
@@ -452,7 +452,7 @@ export default function MatchRegistrationStep2({ onNext, onBack, onClose }: Matc
 
       {/* Bottom Buttons */}
       <div 
-        className="fixed backdrop-blur-[2.5px] bg-[rgba(255,255,255,0.5)] left-0 right-0 content-stretch flex gap-[8px] items-start pb-[48px] pt-[16px] px-[20px] border-t border-[rgba(255,255,255,0.5)] transition-all duration-200"
+        className="fixed backdrop-blur-[2.5px] bg-[rgba(255,255,255,0.5)] left-0 right-0 content-stretch flex gap-[8px] items-start pb-[24px] pt-[16px] px-[20px] border-t border-[rgba(255,255,255,0.5)] transition-all duration-200"
         style={{ bottom: `${keyboardHeight}px` }}
       >
         <button

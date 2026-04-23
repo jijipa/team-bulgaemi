@@ -51,7 +51,7 @@ export default function MercenaryModal({ isSaving, onClose, onNoMercenary, onAdd
       {/* Modal */}
       <div className="fixed bottom-0 left-0 right-0 z-50 animate-[slideUp_0.3s_ease-out]">
         <div className="bg-white overflow-clip relative rounded-tl-[20px] rounded-tr-[20px] w-full mx-auto">
-          <div className="content-stretch flex flex-col h-[387px] items-start justify-between pb-[48px] pt-[64px] px-[20px]">
+          <div className="content-stretch flex flex-col h-[363px] items-start justify-between pb-[24px] pt-[64px] px-[20px]">
             {/* Content */}
             <div className="content-stretch flex flex-col gap-[12px] items-center relative shrink-0 w-full">
               <Layer />

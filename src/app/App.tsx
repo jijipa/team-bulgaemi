@@ -367,6 +367,7 @@ export default function App() {
           opponentName: match.opponentName,
           result,
           status: match.isCompleted ? "completed" : "pending",
+          imageUrl: match.imageUrl,
         };
       });
       setMatches(loadedMatches);
@@ -754,7 +755,7 @@ export default function App() {
               </div>
 
               {/* Player Grid */}
-              <div className="content-center flex flex-wrap gap-[4px] items-center relative shrink-0 w-full mb-[120px]">
+              <div className="content-center flex flex-wrap gap-[4px] items-center relative shrink-0 w-full mb-[96px]">
                 {players.map((player) => (
                   <PlayerCard
                     key={player.id}
@@ -768,7 +769,7 @@ export default function App() {
 
             {/* Bottom Button */}
             {selectedPlayers.size > 0 && (
-              <div className="fixed backdrop-blur-[2.5px] bg-[rgba(255,255,255,0.5)] bottom-0 left-0 right-0 content-stretch flex flex-col items-start pb-[48px] pt-[16px] px-[20px] border-t border-[rgba(255,255,255,0.5)] animate-[slideUp_0.3s_ease-out]">
+              <div className="fixed backdrop-blur-[2.5px] bg-[rgba(255,255,255,0.5)] bottom-0 left-0 right-0 content-stretch flex flex-col items-start pb-[24px] pt-[16px] px-[20px] border-t border-[rgba(255,255,255,0.5)] animate-[slideUp_0.3s_ease-out]">
                 <button
                   onClick={handleSave}
                   disabled={isSavingToGoogle}
@@ -839,6 +840,12 @@ export default function App() {
               "🏆 MOM 저장 완료 - 데이터 새로고침 트리거",
             );
             setShouldRefetch(true); // ✅ MOM 선정 완료 후 Supabase 다시 불러오기
+          }}
+          onMatchImageSaved={() => {
+            console.log(
+              "🖼️ 매치 이미지 저장 완료 - 데이터 새로고침 트리거",
+            );
+            setShouldRefetch(true);
           }}
         />
       ) : isMatchRegistrationRoute ? (

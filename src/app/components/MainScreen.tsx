@@ -11,6 +11,7 @@ import { CardMom } from "../../imports/CardMom";
 
 // ✅ 기본 매치 카드 배경 이미지
 const DEFAULT_MATCH_IMAGE = "https://i.imgur.com/K5sm165.jpeg";
+const TEAM_NAME = "팀불개미";
 
 // 데이터 타입 정의
 export interface Match {
@@ -43,6 +44,320 @@ export interface PlayerStats {
   matchCount: number;
 }
 
+type DisplayScorer = {
+  name: string;
+  goals: number;
+};
+
+const getDisplayScorers = (match: Match): DisplayScorer[] => {
+  const baseScorers = (match.scorers || [])
+    .filter((s) => s.name !== match.opponentName)
+    .filter((s) => !(match.ownGoals && match.ownGoals > 0 && s.name === "자책골"));
+  const teamGoals = baseScorers.reduce((sum, s) => sum + s.goals, 0);
+  const ownGoalsCount = match.ownGoals || 0;
+  const mercenaryGoals = match.ourScore - teamGoals - ownGoalsCount;
+
+  return [
+    ...baseScorers,
+    ...(mercenaryGoals > 0 ? [{ name: "용병", goals: mercenaryGoals }] : []),
+    ...(ownGoalsCount > 0 ? [{ name: "자책골", goals: ownGoalsCount }] : []),
+  ];
+};
+
+const loadCanvasImage = (src: string): Promise<HTMLImageElement> => {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("이미지를 불러오지 못했습니다."));
+    image.src = src;
+  });
+};
+
+const drawCoverImage = (
+  context: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  size: number,
+) => {
+  const imageRatio = image.naturalWidth / image.naturalHeight;
+  const canvasRatio = 1;
+  const sourceWidth = imageRatio > canvasRatio ? image.naturalHeight : image.naturalWidth;
+  const sourceHeight = imageRatio > canvasRatio ? image.naturalHeight : image.naturalWidth;
+  const sourceX = (image.naturalWidth - sourceWidth) / 2;
+  const sourceY = (image.naturalHeight - sourceHeight) / 2;
+
+  context.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, size, size);
+};
+
+const drawCenteredText = (
+  context: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+) => {
+  context.fillText(text, x, y, maxWidth);
+};
+
+const downloadMatchImage = async (match: Match) => {
+  const size = 1080;
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+
+  if (!context) {
+    throw new Error("이미지 저장을 지원하지 않는 브라우저입니다.");
+  }
+
+  canvas.width = size;
+  canvas.height = size;
+
+  try {
+    const image = await loadCanvasImage(match.imageUrl || DEFAULT_MATCH_IMAGE);
+    drawCoverImage(context, image, size);
+  } catch {
+    const fallback = await loadCanvasImage(DEFAULT_MATCH_IMAGE);
+    drawCoverImage(context, fallback, size);
+  }
+
+  const gradient = context.createLinearGradient(0, 0, 0, size);
+  gradient.addColorStop(0, "rgba(0,0,0,0.3)");
+  gradient.addColorStop(0.7, "rgba(0,0,0,0.7)");
+  gradient.addColorStop(1, "rgba(0,0,0,0.72)");
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, size, size);
+
+  await document.fonts?.ready;
+
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillStyle = "#ffffff";
+  context.font = "500 54px Paperlogy, Pretendard, sans-serif";
+  drawCenteredText(context, match.date, size / 2, 150, 860);
+
+  context.font = "500 40px Pretendard, sans-serif";
+  drawCenteredText(context, TEAM_NAME, 360, 250, 260);
+  drawCenteredText(context, match.opponentName, 720, 250, 260);
+
+  context.fillStyle = "rgba(255,255,255,0.75)";
+  context.font = "400 310px Anton, sans-serif";
+  drawCenteredText(context, String(match.ourScore), 360, 490, 240);
+  drawCenteredText(context, String(match.opponentScore), 720, 490, 240);
+  context.fillRect(510, 480, 60, 18);
+
+  context.fillStyle = "rgba(255,255,255,0.75)";
+  context.font = "500 40px Pretendard, sans-serif";
+  drawCenteredText(context, "⚽", size / 2, 705, 80);
+  context.fillStyle = "rgba(255,255,255,0.2)";
+  context.fillRect(110, 745, 860, 3);
+
+  context.fillStyle = "rgba(255,255,255,0.75)";
+  context.font = "500 36px Pretendard, sans-serif";
+  const scorers = getDisplayScorers(match).slice(0, 8);
+  const startY = 805;
+  scorers.forEach((scorer, index) => {
+    const column = index % 4;
+    const row = Math.floor(index / 4);
+    const x = 240 + column * 200;
+    const y = startY + row * 56;
+    drawCenteredText(context, `${scorer.name} ${scorer.goals}`, x, y, 180);
+  });
+
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((pngBlob) => {
+      if (pngBlob) {
+        resolve(pngBlob);
+      } else {
+        reject(new Error("이미지 생성에 실패했습니다."));
+      }
+    }, "image/png");
+  });
+
+  const link = document.createElement("a");
+  const objectUrl = URL.createObjectURL(blob);
+  link.href = objectUrl;
+  link.download = `team-bulgaemi-${match.date.replace(/\./g, "-")}-${match.id}.png`;
+  link.click();
+  URL.revokeObjectURL(objectUrl);
+};
+
+interface MatchArtworkProps {
+  match: Match;
+  square?: boolean;
+  onClick?: () => void;
+}
+
+function MatchArtwork({ match, square = false, onClick }: MatchArtworkProps) {
+  const displayScorers = getDisplayScorers(match);
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="overflow-clip relative shrink-0 text-left"
+      style={{
+        width: square ? "100%" : 216,
+        height: square ? "100%" : 324,
+        borderRadius: square ? 0 : 12,
+        cursor: onClick ? "pointer" : "default",
+      }}
+      aria-label={`${match.opponentName} 매치 이미지 보기`}
+    >
+      <div aria-hidden="true" className="absolute inset-0 pointer-events-none">
+        <ImageWithFallback
+          alt=""
+          className="absolute max-w-none object-cover size-full"
+          src={match.imageUrl || DEFAULT_MATCH_IMAGE}
+          fallbackSrc={DEFAULT_MATCH_IMAGE}
+          crossOrigin="anonymous"
+        />
+        <div className="absolute bg-gradient-to-b from-[rgba(0,0,0,0.3)] inset-0 mix-blend-multiply to-[69.848%] to-[rgba(0,0,0,0.7)]" />
+      </div>
+      <div
+        className="absolute content-stretch flex flex-col items-center left-0 right-0"
+        style={{ top: square ? "9.88%" : 32 }}
+      >
+        <p
+          className="leading-[normal] not-italic relative shrink-0 text-center text-white w-full whitespace-pre-wrap"
+          style={{
+            fontFamily: "var(--font-paperlogy)",
+            fontSize: square ? "4.94vw" : 16,
+          }}
+        >
+          {match.date}
+        </p>
+        <div
+          className="content-stretch flex items-center justify-center relative shrink-0 w-full"
+          style={{ paddingTop: square ? "7.4%" : 24 }}
+        >
+          <div
+            className="content-stretch flex flex-col items-center not-italic relative shrink-0"
+            style={{ gap: square ? 4.63 : 4, width: square ? "24.69%" : 80 }}
+          >
+            <p
+              className="leading-[normal] relative shrink-0 text-white whitespace-nowrap"
+              style={{
+                fontFamily: "var(--font-pretendard)",
+                fontSize: square ? "3.7vw" : 12,
+                maxWidth: "100%",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {TEAM_NAME}
+            </p>
+            <p
+              className="relative shrink-0 text-[rgba(255,255,255,0.75)] text-center whitespace-pre-wrap"
+              style={{
+                fontFamily: "var(--font-anton)",
+                fontSize: square ? "30.86vw" : 100,
+                lineHeight: square ? "30.86vw" : "100px",
+                width: square ? "15.43vw" : 50,
+              }}
+            >
+              {match.ourScore}
+            </p>
+          </div>
+          <div
+            className="content-stretch flex flex-col items-start relative shrink-0"
+            style={{ paddingTop: square ? "4.94%" : 16, width: square ? "6.17%" : 20 }}
+          >
+            <div
+              className="bg-[rgba(255,255,255,0.75)] shrink-0 w-full"
+              style={{ height: square ? "2.47vw" : 8 }}
+            />
+          </div>
+          <div
+            className="content-stretch flex flex-col items-center not-italic relative shrink-0"
+            style={{ gap: square ? 4.63 : 4, width: square ? "24.69%" : 80 }}
+          >
+            <p
+              className="leading-[normal] relative shrink-0 text-white whitespace-nowrap"
+              style={{
+                fontFamily: "var(--font-pretendard)",
+                fontSize: square ? "3.7vw" : 12,
+                maxWidth: "100%",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {match.opponentName}
+            </p>
+            <p
+              className="relative shrink-0 text-[rgba(255,255,255,0.75)] text-center whitespace-pre-wrap"
+              style={{
+                fontFamily: "var(--font-anton)",
+                fontSize: square ? "30.86vw" : 100,
+                lineHeight: square ? "30.86vw" : "100px",
+                width: square ? "15.43vw" : 50,
+              }}
+            >
+              {match.opponentScore}
+            </p>
+          </div>
+        </div>
+        <div className="relative shrink-0 w-full">
+          <div className="flex flex-col items-center justify-center size-full">
+            <div
+              className="content-stretch flex flex-col items-center justify-center relative w-full"
+              style={{ paddingLeft: square ? "9.88%" : 32, paddingRight: square ? "9.88%" : 32 }}
+            >
+              <div
+                className="content-stretch flex items-center justify-center overflow-clip relative shrink-0 w-full"
+                style={{ paddingBottom: square ? "1.23%" : 4, paddingTop: square ? "3.7%" : 12 }}
+              >
+                <div
+                  className="relative shrink-0"
+                  style={{
+                    width: square ? "4.93vw" : 15.972,
+                    height: square ? "4.93vw" : 15.974,
+                  }}
+                >
+                  <svg
+                    className="block size-full"
+                    fill="none"
+                    preserveAspectRatio="none"
+                    viewBox="0 0 15.9723 15.9743"
+                  >
+                    <path
+                      d={soccerBallSvg.p9ba2480}
+                      fill="var(--fill-0, white)"
+                      fillOpacity="0.75"
+                    />
+                  </svg>
+                </div>
+              </div>
+              <div className="bg-[rgba(255,255,255,0.2)] h-px shrink-0 w-full" />
+              <div
+                className="content-center flex flex-wrap items-center justify-center leading-[normal] not-italic relative shrink-0 text-[rgba(255,255,255,0.75)] text-center whitespace-pre-wrap"
+                style={{
+                  fontFamily: "var(--font-pretendard)",
+                  fontSize: square ? "3.7vw" : 12,
+                  gap: square ? "8px 27.778px" : "8px 16px",
+                  paddingTop: square ? "3.7%" : 12,
+                  width: "100%",
+                }}
+              >
+                {displayScorers.map((scorer, index) => (
+                  <p
+                    key={`${scorer.name}-${index}`}
+                    className="relative shrink-0"
+                    style={{
+                      height: square ? "4.32vw" : 14,
+                      width: square ? "14.81vw" : 60,
+                    }}
+                  >
+                    {scorer.name} {scorer.goals}
+                  </p>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </button>
+  );
+}
+
 interface MainScreenProps {
   onNavigateToMatches: () => void;
   cachedData?: any; // ✅ 캐시 데이터 추가
@@ -54,6 +369,8 @@ export default function MainScreen({
   cachedData,
   isLoadingCache,
 }: MainScreenProps) {
+  const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
+  const [isDownloadingMatchImage, setIsDownloadingMatchImage] = useState(false);
   const [remoteMatches, setRemoteMatches] = useState<Match[]>(
     [],
   );
@@ -318,10 +635,7 @@ export default function MainScreen({
                 opponentName: match.opponentName,
                 scorers: scorers,
                 ownGoals: ownGoals, // ✅ 자책골 정보 추가
-                imageUrl:
-                  index % 2 === 0
-                    ? DEFAULT_MATCH_IMAGE
-                    : DEFAULT_MATCH_IMAGE,
+                imageUrl: match.imageUrl || DEFAULT_MATCH_IMAGE,
                 momPlayerId: undefined,
               };
 
@@ -583,6 +897,20 @@ export default function MainScreen({
 
   const sortedPlayers = getSortedPlayers();
 
+  const handleDownloadSelectedMatch = async () => {
+    if (!selectedMatch || isDownloadingMatchImage) return;
+
+    try {
+      setIsDownloadingMatchImage(true);
+      await downloadMatchImage(selectedMatch);
+    } catch (error) {
+      console.error("❌ 매치 이미지 다운로드 실패:", error);
+      alert("이미지 다운로드에 실패했습니다. 이미지 주소 또는 브라우저 권한을 확인해주세요.");
+    } finally {
+      setIsDownloadingMatchImage(false);
+    }
+  };
+
   // 스켈레톤 컴포넌트
   const MatchCardSkeleton = () => (
     <div className="h-[324px] relative rounded-[12px] shrink-0 w-[216px] bg-gray-200 animate-pulse" />
@@ -740,147 +1068,12 @@ export default function MainScreen({
                   <MatchCardSkeleton />
                 </>
               ) : (
-                matches.map((match, matchIndex) => (
-                  <div
+                matches.map((match) => (
+                  <MatchArtwork
                     key={match.id}
-                    className="h-[324px] overflow-clip relative rounded-[12px] shrink-0 w-[216px]"
-                  >
-                    <div
-                      aria-hidden="true"
-                      className="absolute inset-0 pointer-events-none rounded-[12px]"
-                    >
-                      <ImageWithFallback
-                        alt=""
-                        className="absolute max-w-none object-cover rounded-[12px] size-full"
-                        src={match.imageUrl}
-                        fallbackSrc={
-                          matchIndex % 2 === 0
-                            ? DEFAULT_MATCH_IMAGE
-                            : DEFAULT_MATCH_IMAGE
-                        }
-                      />
-                      <div className="absolute bg-gradient-to-b from-[rgba(0,0,0,0.3)] inset-0 mix-blend-multiply rounded-[12px] to-[69.848%] to-[rgba(0,0,0,0.7)]" />
-                    </div>
-                    <div className="absolute content-stretch flex flex-col items-center left-0 right-0 top-[32px]">
-                      <p
-                        className="leading-[normal] not-italic relative shrink-0 text-[16px] text-center text-white w-full whitespace-pre-wrap"
-                        style={{
-                          fontFamily: "var(--font-paperlogy)",
-                        }}
-                      >
-                        {match.date}
-                      </p>
-                      {/* Score */}
-                      <div className="content-stretch flex items-center justify-center pt-[24px] relative shrink-0 w-full">
-                        <div className="content-stretch flex flex-col gap-[4px] items-center not-italic relative shrink-0 w-[80px]">
-                          <p
-                            className="leading-[normal] relative shrink-0 text-[12px] text-white"
-                            style={{
-                              fontFamily:
-                                "var(--font-pretendard)",
-                            }}
-                          >
-                            팀불개미
-                          </p>
-                          <p
-                            className="leading-[100px] relative shrink-0 text-[100px] text-[rgba(255,255,255,0.75)] w-[50px] whitespace-pre-wrap"
-                            style={{
-                              fontFamily: "var(--font-anton)",
-                            }}
-                          >
-                            {match.ourScore}
-                          </p>
-                        </div>
-                        <div className="content-stretch flex flex-col items-start pt-[16px] relative shrink-0 w-[20px]">
-                          <div className="bg-[rgba(255,255,255,0.75)] h-[8px] shrink-0 w-full" />
-                        </div>
-                        <div className="content-stretch flex flex-col gap-[4px] items-center not-italic relative shrink-0 w-[80px]">
-                          <p
-                            className="leading-[normal] relative shrink-0 text-[12px] text-white"
-                            style={{
-                              fontFamily:
-                                "var(--font-pretendard)",
-                            }}
-                          >
-                            {match.opponentName}
-                          </p>
-                          <p
-                            className="leading-[100px] relative shrink-0 text-[100px] text-[rgba(255,255,255,0.75)] w-[50px] whitespace-pre-wrap"
-                            style={{
-                              fontFamily: "var(--font-anton)",
-                            }}
-                          >
-                            {match.opponentScore}
-                          </p>
-                        </div>
-                      </div>
-                      {/* Goal Icon & Scorer Names */}
-                      <div className="relative shrink-0 w-full">
-                        <div className="flex flex-col items-center justify-center size-full">
-                          <div className="content-stretch flex flex-col items-center justify-center px-[32px] relative w-full">
-                            <div className="content-stretch flex items-center justify-center overflow-clip pb-[4px] pt-[12px] relative shrink-0 w-full">
-                              <div className="h-[15.974px] relative shrink-0 w-[15.972px]">
-                                <svg
-                                  className="block size-full"
-                                  fill="none"
-                                  preserveAspectRatio="none"
-                                  viewBox="0 0 15.9723 15.9743"
-                                >
-                                  <path
-                                    d={soccerBallSvg.p9ba2480}
-                                    fill="var(--fill-0, white)"
-                                    fillOpacity="0.75"
-                                  />
-                                </svg>
-                              </div>
-                            </div>
-                            <div className="bg-[rgba(255,255,255,0.2)] h-px shrink-0 w-full" />
-                            <div
-                              className="content-center flex flex-wrap gap-[8px_16px] items-center justify-center leading-[normal] not-italic pt-[12px] relative shrink-0 text-[12px] text-[rgba(255,255,255,0.75)] text-center w-full whitespace-pre-wrap"
-                              style={{
-                                fontFamily:
-                                  "var(--font-pretendard)",
-                              }}
-                            >
-                              {(() => {
-                                const baseScorers = (match.scorers || [])
-                                  // 상대팀 이름 제거
-                                  .filter(s => s.name !== match.opponentName)
-                                  // 자책골이 ownGoals에 따로 있으면 scorers에 있는 자책골 제거
-                                  .filter(s => !(match.ownGoals > 0 && s.name === "자책골"));
-
-                                const teamGoals = baseScorers.reduce(
-                                  (sum, s) => sum + s.goals,
-                                  0
-                                );
-
-                                const ownGoalsCount = match.ownGoals || 0;
-
-                                const mercenaryGoals =
-                                  match.ourScore - teamGoals - ownGoalsCount;
-
-                                const displayScorers = [
-                                  ...baseScorers,
-                                  ...(mercenaryGoals > 0
-                                    ? [{ name: "용병", goals: mercenaryGoals }]
-                                    : []),
-                                  ...(ownGoalsCount > 0
-                                    ? [{ name: "자책골", goals: ownGoalsCount }]
-                                    : []),
-                                ];
-
-                                return displayScorers.map((s, i) => (
-                                  <p key={i} className="h-[14px] relative shrink-0 w-[60px]">
-                                    {s.name} {s.goals}
-                                  </p>
-                                ));
-                              })()}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                    match={match}
+                    onClick={() => setSelectedMatch(match)}
+                  />
                 ))
               )}
             </div>
@@ -1150,6 +1343,65 @@ export default function MainScreen({
           )}
         </div>
       </div>
+      {selectedMatch && (
+        <div
+          className="fixed inset-0 z-50"
+          style={{ backgroundColor: "rgba(0, 0, 0, 0.9)" }}
+          role="dialog"
+          aria-modal="true"
+          aria-label="매치 이미지 미리보기"
+        >
+          <div className="absolute h-[48px] left-0 right-0 top-[65px] z-10">
+            <button
+              type="button"
+              onClick={() => setSelectedMatch(null)}
+              className="absolute content-stretch flex items-center justify-center right-[8px] size-[40px] top-1/2 -translate-y-1/2"
+              aria-label="오버레이 닫기"
+            >
+              <svg
+                className="block size-[24px]"
+                fill="none"
+                preserveAspectRatio="none"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  d="M6 6L18 18M18 6L6 18"
+                  stroke="white"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                />
+              </svg>
+            </button>
+          </div>
+
+          <div
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 overflow-clip"
+            style={{ width: "100vw", height: "100vw" }}
+          >
+            <MatchArtwork match={selectedMatch} square />
+          </div>
+
+          <div
+            className="absolute backdrop-blur-[2.5px] bottom-0 content-stretch flex flex-col items-start left-0 right-0 pb-[24px] pt-[16px] px-[20px]"
+          >
+            <button
+              type="button"
+              onClick={handleDownloadSelectedMatch}
+              disabled={isDownloadingMatchImage}
+              className="border border-solid content-stretch flex h-[52px] items-center justify-center p-[10px] relative rounded-[8px] w-full disabled:opacity-60 disabled:cursor-not-allowed"
+              style={{ borderColor: "#ffffff" }}
+            >
+              <p
+                className="leading-[normal] not-italic relative shrink-0 text-[18px] text-left text-white whitespace-nowrap"
+                style={{ fontFamily: "var(--font-paperlogy)", fontWeight: 500 }}
+              >
+                {isDownloadingMatchImage ? "이미지 생성 중" : "이미지 다운로드"}
+              </p>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -116,7 +116,7 @@ export default function MatchRegistrationStep3({ onComplete, onBack, isSaving, o
 
       {/* Bottom Buttons */}
       <div 
-        className="fixed backdrop-blur-[2.5px] bg-[rgba(255,255,255,0.5)] left-0 right-0 content-stretch flex gap-[8px] items-start pb-[48px] pt-[16px] px-[20px] border-t border-[rgba(255,255,255,0.5)] transition-all duration-200"
+        className="fixed backdrop-blur-[2.5px] bg-[rgba(255,255,255,0.5)] left-0 right-0 content-stretch flex gap-[8px] items-start pb-[24px] pt-[16px] px-[20px] border-t border-[rgba(255,255,255,0.5)] transition-all duration-200"
         style={{ bottom: `${keyboardHeight}px` }}
       >
         <button

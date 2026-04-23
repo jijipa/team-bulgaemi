@@ -316,7 +316,7 @@ export default function MatchRegistrationStep1({ onNext, onBack, onClose }: Matc
 
       {/* Bottom Button */}
       {isFormValid && (
-        <div className="fixed backdrop-blur-[2.5px] bg-[rgba(255,255,255,0.5)] bottom-0 left-0 right-0 content-stretch flex flex-col items-start pb-[48px] pt-[16px] px-[20px] border-t border-[rgba(255,255,255,0.5)]">
+        <div className="fixed backdrop-blur-[2.5px] bg-[rgba(255,255,255,0.5)] bottom-0 left-0 right-0 content-stretch flex flex-col items-start pb-[24px] pt-[16px] px-[20px] border-t border-[rgba(255,255,255,0.5)]">
           <button
             onClick={handleNext}
             className="bg-[#242b35] h-[52px] relative rounded-[8px] shrink-0 w-full"

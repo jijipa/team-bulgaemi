@@ -1,16 +1,22 @@
-import { useState, useEffect } from "react";
+import { useRef, useState, useEffect, type ChangeEvent } from "react";
 import { Match } from "../types/data";
 import { useMatchData } from "../hooks/useMatchData";
 import svgPaths from "../../imports/svg-pst6m3rsp2";
 import { motion, AnimatePresence } from "motion/react";
+import { toast } from "sonner";
 import MatchActionsSheet from "./MatchActionsSheet";
-import { deleteMatch, getParticipants } from "../utils/storage";
+import { deleteMatch, getParticipants, updateMatch } from "../utils/storage";
 import MomSelectionModal from "./MomSelectionModal";
 import { isSupabaseConfigured } from "../lib/supabase";
 import {
   deleteMatchFromSupabase,
   fetchMatchesFromSupabase,
+  updateMatchInSupabase,
 } from "../services/supabaseMatches";
+import {
+  deleteMatchImagesFromSupabase,
+  uploadMatchImageToSupabase,
+} from "../services/matchImages";
 import {
   fetchAppDataFromSupabase,
   saveMomToSupabase,
@@ -33,6 +39,7 @@ export interface MatchListItem {
   opponentName: string;
   result?: "win" | "lose" | "draw"; // 승, 패, 무
   status: "pending" | "completed"; // pending: 득점 미입력, completed: 득점 입력 완료
+  imageUrl?: string;
 }
 
 interface MatchListScreenProps {
@@ -41,12 +48,15 @@ interface MatchListScreenProps {
   onScoreMatch: (matchId: string) => void; // 스코어 버튼 클릭 핸들러
   onEditScore: (matchId: string) => void; // ✅ 스코어 수정 핸들러 추가
   onMomSaved?: () => void; // ✅ MOM 저장 완료 콜백 
+  onMatchImageSaved?: () => void;
 }
 
-export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEditScore, onMomSaved }: MatchListScreenProps) {
+export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEditScore, onMomSaved, onMatchImageSaved }: MatchListScreenProps) {
   // 실제 데이터 로드
   const { matches: realMatches, refreshData } = useMatchData();
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [isRefreshing, setIsRefreshing] = useState(true);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
   
   // 더보기 메뉴 상태
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
@@ -193,6 +203,7 @@ export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEd
       opponentName: match.opponentName,
       result: result,
       status: match.isCompleted ? "completed" : "pending",
+      imageUrl: match.imageUrl,
     };
   });
 
@@ -276,6 +287,12 @@ export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEd
       console.log("✅ 로컬 스토리지에서 삭제 완료");
 
       if (isSupabaseConfigured) {
+        try {
+          await deleteMatchImagesFromSupabase(selectedMatchId);
+          console.log("✅ Supabase Storage 이미지 삭제 완료");
+        } catch (imageError) {
+          console.warn("⚠️ Supabase Storage 이미지 삭제 실패:", imageError);
+        }
         await deleteMatchFromSupabase(selectedMatchId);
       }
       console.log("✅ Supabase 삭제 완료");
@@ -338,8 +355,57 @@ export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEd
     setSelectedMatchId(null);
   };
 
+  const handleImageAction = () => {
+    if (!selectedMatchId || isUploadingImage) return;
+    setShowMoreMenu(false);
+    imageInputRef.current?.click();
+  };
+
+  const handleImageSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) {
+      setSelectedMatchId(null);
+      return;
+    }
+    if (!selectedMatchId) return;
+
+    if (!file.type.startsWith("image/") && !/\.(heic|heif)$/i.test(file.name)) {
+      alert("이미지 파일만 등록할 수 있습니다.");
+      return;
+    }
+
+    try {
+      setIsUploadingImage(true);
+      const hadImage = Boolean(
+        matches.find((match) => match.id === selectedMatchId)?.imageUrl,
+      );
+      const imageUrl = await uploadMatchImageToSupabase(selectedMatchId, file);
+      updateMatch(selectedMatchId, { imageUrl });
+      await updateMatchInSupabase(selectedMatchId, { imageUrl });
+      refreshData();
+      onMatchImageSaved?.();
+      toast.success(hadImage ? "매치 이미지가 수정되었습니다." : "매치 이미지가 등록되었습니다.");
+    } catch (error) {
+      console.error("❌ 매치 이미지 등록 실패:", error);
+      alert("매치 이미지 등록에 실패했습니다. Supabase Storage 설정을 확인해주세요.");
+    } finally {
+      setIsUploadingImage(false);
+      setSelectedMatchId(null);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-30 bg-white h-screen min-h-screen w-full overflow-hidden">
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/*,.heic,.heif"
+        className="hidden"
+        onChange={handleImageSelected}
+      />
+
       {/* Header */}
       <div className="absolute h-[48px] left-0 right-0 top-[24px] z-10">
         <button
@@ -364,7 +430,7 @@ export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEd
       </div>
 
       {/* Match List */}
-      <div className="absolute bottom-[116px] content-stretch flex flex-col gap-[48px] items-start left-0 right-0 top-[96px] w-full overflow-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+      <div className="absolute bottom-[92px] content-stretch flex flex-col gap-[48px] items-start left-0 right-0 top-[96px] w-full overflow-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         {isRefreshing ? (
           <MonthSkeleton />
         ) : sortedMonths.length === 0 ? (
@@ -487,7 +553,7 @@ export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEd
       </div>
 
       {/* Add Match Button */}
-      <div className="fixed backdrop-blur-[2.5px] bg-[rgba(255,255,255,0.5)] bottom-0 left-0 right-0 z-20 content-stretch flex flex-col items-start pb-[48px] pt-[16px] px-[20px] border-t border-[rgba(255,255,255,0.5)]">
+      <div className="fixed backdrop-blur-[2.5px] bg-[rgba(255,255,255,0.5)] bottom-0 left-0 right-0 z-20 content-stretch flex flex-col items-start pb-[24px] pt-[16px] px-[20px] border-t border-[rgba(255,255,255,0.5)]">
         <button
           onClick={onAddMatch}
           className="bg-[#242b35] content-stretch flex gap-[8px] items-center justify-center not-italic p-[10px] relative rounded-[8px] w-full h-[52px] text-[18px]"
@@ -503,6 +569,7 @@ export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEd
         {showMoreMenu && selectedMatchId && (() => {
           const selectedMatch = matches.find((match) => match.id === selectedMatchId);
           const canSelectMom = selectedMatch?.status === "completed";
+          const hasImage = Boolean(selectedMatch?.imageUrl);
           // ✅ 해당 매치의 MOM 존재 여부 확인
           const hasMomRecord = momsData.some((mom: any) => 
             (mom["matchId"] === selectedMatchId) || (mom["경기ID"] === selectedMatchId)
@@ -518,7 +585,9 @@ export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEd
               onDelete={handleDeleteMatch}
               onEdit={handleEditMatch}
               onMOM={handleMOMSelect}
+              onImage={handleImageAction}
               hasMom={hasMomRecord}
+              hasImage={hasImage}
               canSelectMom={canSelectMom}
             />
           );
