@@ -51,14 +51,14 @@ export default function MercenaryModal({ isSaving, onClose, onNoMercenary, onAdd
       {/* Modal */}
       <div className="fixed bottom-0 left-0 right-0 z-50 animate-[slideUp_0.3s_ease-out]">
         <div className="bg-white overflow-clip relative rounded-tl-[20px] rounded-tr-[20px] w-full mx-auto">
-          <div className="content-stretch flex flex-col h-[363px] items-start justify-between pb-[24px] pt-[64px] px-[20px]">
+          <div className="content-stretch flex flex-col gap-[48px] h-[364px] items-start pb-[24px] pt-[64px] px-[20px]">
             {/* Content */}
             <div className="content-stretch flex flex-col gap-[12px] items-center relative shrink-0 w-full">
               <Layer />
               <div className="content-stretch flex flex-col items-center relative shrink-0">
                 <div className="font-bold leading-[32px] not-italic relative shrink-0 text-[#242b35] text-[24px] text-center tracking-[-0.48px] whitespace-nowrap" style={{ fontFamily: 'var(--font-pretendard)' }}>
-                  <p className="mb-0">팀원 외에 이번 경기에 함께하는</p>
-                  <p>용병 선수가 있나요?</p>
+                  <p className="m-0">팀원 외에 이번 경기에 함께하는</p>
+                  <p className="m-0">용병 선수가 있나요?</p>
                 </div>
               </div>
             </div>

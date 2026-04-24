@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useMatchData } from "../hooks/useMatchData";
+import type { Match as RegisteredMatch } from "../types/data";
 import {
   getPlayers,
   getScoresByMatchId,
@@ -8,13 +9,18 @@ import svgPaths from "../../imports/svg-fnwogjyv26";
 import soccerBallSvg from "../../imports/svg-aypr951miv";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 import { CardMom } from "../../imports/CardMom";
+import { toast } from "sonner";
 
+const UPCOMING_MATCH_CARD_BG =
+  "https://www.figma.com/api/mcp/asset/3779d76a-0df8-4c66-9114-140612cf026d";
 // ✅ 기본 매치 카드 배경 이미지
-const DEFAULT_MATCH_IMAGE = "https://i.imgur.com/K5sm165.jpeg";
+const DEFAULT_MATCH_IMAGE = UPCOMING_MATCH_CARD_BG;
 const TEAM_NAME = "팀불개미";
+const COPY_ICON_ASSET =
+  "https://www.figma.com/api/mcp/asset/37c84f9e-0914-4475-96de-5d30bcdd9051";
 
 // 데이터 타입 정의
-export interface Match {
+export interface CompletedMatch {
   id: string;
   date: string; // YYYY.MM.DD 형식
   ourScore: number;
@@ -49,7 +55,7 @@ type DisplayScorer = {
   goals: number;
 };
 
-const getDisplayScorers = (match: Match): DisplayScorer[] => {
+const getDisplayScorers = (match: CompletedMatch): DisplayScorer[] => {
   const baseScorers = (match.scorers || [])
     .filter((s) => s.name !== match.opponentName)
     .filter((s) => !(match.ownGoals && match.ownGoals > 0 && s.name === "자책골"));
@@ -99,7 +105,7 @@ const drawCenteredText = (
   context.fillText(text, x, y, maxWidth);
 };
 
-const downloadMatchImage = async (match: Match) => {
+const downloadMatchImage = async (match: CompletedMatch) => {
   const size = 1080;
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d");
@@ -181,13 +187,24 @@ const downloadMatchImage = async (match: Match) => {
 };
 
 interface MatchArtworkProps {
-  match: Match;
+  match: CompletedMatch;
   square?: boolean;
   onClick?: () => void;
 }
 
 function MatchArtwork({ match, square = false, onClick }: MatchArtworkProps) {
   const displayScorers = getDisplayScorers(match);
+  const hasDoubleDigitScore = match.ourScore >= 10 || match.opponentScore >= 10;
+  const scoreFontSize = square
+    ? "30.86vw"
+    : hasDoubleDigitScore
+      ? 80
+      : 100;
+  const scoreLineHeight = square
+    ? "30.86vw"
+    : hasDoubleDigitScore
+      ? "90px"
+      : "100px";
 
   return (
     <button
@@ -249,9 +266,8 @@ function MatchArtwork({ match, square = false, onClick }: MatchArtworkProps) {
               className="relative shrink-0 text-[rgba(255,255,255,0.75)] text-center whitespace-pre-wrap"
               style={{
                 fontFamily: "var(--font-anton)",
-                fontSize: square ? "30.86vw" : 100,
-                lineHeight: square ? "30.86vw" : "100px",
-                width: square ? "15.43vw" : 50,
+                fontSize: scoreFontSize,
+                lineHeight: scoreLineHeight,
               }}
             >
               {match.ourScore}
@@ -286,9 +302,8 @@ function MatchArtwork({ match, square = false, onClick }: MatchArtworkProps) {
               className="relative shrink-0 text-[rgba(255,255,255,0.75)] text-center whitespace-pre-wrap"
               style={{
                 fontFamily: "var(--font-anton)",
-                fontSize: square ? "30.86vw" : 100,
-                lineHeight: square ? "30.86vw" : "100px",
-                width: square ? "15.43vw" : 50,
+                fontSize: scoreFontSize,
+                lineHeight: scoreLineHeight,
               }}
             >
               {match.opponentScore}
@@ -303,7 +318,7 @@ function MatchArtwork({ match, square = false, onClick }: MatchArtworkProps) {
             >
               <div
                 className="content-stretch flex items-center justify-center overflow-clip relative shrink-0 w-full"
-                style={{ paddingBottom: square ? "1.23%" : 4, paddingTop: square ? "3.7%" : 12 }}
+                style={{ paddingBottom: square ? "1.23%" : 4 }}
               >
                 <div
                   className="relative shrink-0"
@@ -332,9 +347,10 @@ function MatchArtwork({ match, square = false, onClick }: MatchArtworkProps) {
                 style={{
                   fontFamily: "var(--font-pretendard)",
                   fontSize: square ? "3.7vw" : 12,
-                  gap: square ? "8px 27.778px" : "8px 16px",
-                  paddingTop: square ? "3.7%" : 12,
+                  gap: square ? "8px 27.778px" : "6px 24px",
+                  paddingTop: square ? "3.7%" : 8,
                   width: "100%",
+                  maxWidth: square ? "100%" : 128,
                 }}
               >
                 {displayScorers.map((scorer, index) => (
@@ -343,7 +359,7 @@ function MatchArtwork({ match, square = false, onClick }: MatchArtworkProps) {
                     className="relative shrink-0"
                     style={{
                       height: square ? "4.32vw" : 14,
-                      width: square ? "14.81vw" : 60,
+                      width: square ? "14.81vw" : 52,
                     }}
                   >
                     {scorer.name} {scorer.goals}
@@ -358,6 +374,374 @@ function MatchArtwork({ match, square = false, onClick }: MatchArtworkProps) {
   );
 }
 
+const DAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
+
+const parseLocalDate = (dateString: string) => {
+  const dateOnly = dateString.split("T")[0];
+  const [year, month, day] = dateOnly.split("-").map(Number);
+  return new Date(year, (month || 1) - 1, day || 1);
+};
+
+const formatMatchTypeLabel = (matchType: RegisteredMatch["matchType"]) =>
+  matchType === "futsal" ? "풋살" : "축구";
+
+const formatMonthLabel = (matchDate: string) => {
+  const date = parseLocalDate(matchDate);
+  return `${date.getFullYear()}년 ${date.getMonth() + 1}월`;
+};
+
+const formatKoreanTime = (time: string) => {
+  const [rawHour, rawMinute] = time.split(":").map(Number);
+  const hour = Number.isFinite(rawHour) ? rawHour : 0;
+  const minute = Number.isFinite(rawMinute) ? rawMinute : 0;
+  const meridiem = hour < 12 ? "오전" : "오후";
+  const twelveHour = hour % 12 === 0 ? 12 : hour % 12;
+  return `${meridiem} ${twelveHour}시${minute === 30 ? " 반" : ""}`;
+};
+
+const formatDateTimeLabel = (matchDate: string, startTime: string) => {
+  const date = parseLocalDate(matchDate);
+  return `${date.getDate()}일(${DAY_LABELS[date.getDay()]}) ${formatKoreanTime(startTime)}`;
+};
+
+const getDurationMinutes = (startTime: string, endTime: string) => {
+  const [startHour, startMinute] = startTime.split(":").map(Number);
+  const [endHour, endMinute] = endTime.split(":").map(Number);
+  const startTotal = (Number.isFinite(startHour) ? startHour : 0) * 60 + (Number.isFinite(startMinute) ? startMinute : 0);
+  const endTotal = (Number.isFinite(endHour) ? endHour : 0) * 60 + (Number.isFinite(endMinute) ? endMinute : 0);
+  const diff = endTotal - startTotal;
+  return diff > 0 ? diff : 0;
+};
+
+const formatDurationLabel = (startTime: string, endTime: string, quarterCount: string) => {
+  const durationMinutes = getDurationMinutes(startTime, endTime);
+  const hourText =
+    durationMinutes % 60 === 30
+      ? `${Math.floor(durationMinutes / 60)}시간 반`
+      : `${Math.floor(durationMinutes / 60)}시간`;
+
+  return `${hourText} / ${quarterCount} 진행`;
+};
+
+const copyToClipboard = async (text: string) => {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  document.execCommand("copy");
+  document.body.removeChild(textarea);
+};
+
+function CopyIcon() {
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        position: "relative",
+        width: 20,
+        height: 20,
+        minWidth: 20,
+        minHeight: 20,
+        maxWidth: 20,
+        maxHeight: 20,
+        flexShrink: 0,
+        display: "block",
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          left: 2.92,
+          top: 2.08,
+          width: 13.333,
+          height: 15,
+        }}
+      >
+        <img
+          alt=""
+          src={COPY_ICON_ASSET}
+          style={{
+            display: "block",
+            width: "100%",
+            height: "100%",
+            maxWidth: "none",
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+interface UpcomingMatchCardProps {
+  match: RegisteredMatch;
+}
+
+function UpcomingMatchCard({ match }: UpcomingMatchCardProps) {
+  const handleCopyLocationLink = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+
+    if (!match.locationLink) {
+      return;
+    }
+
+    try {
+      await copyToClipboard(match.locationLink);
+      toast.success("주소가 복사되었습니다.");
+    } catch (error) {
+      console.error("주소 복사 실패:", error);
+      toast.error("주소 복사에 실패했습니다.");
+    }
+  };
+
+  return (
+    <div
+      className="relative shrink-0 overflow-hidden rounded-[12px]"
+      style={{
+        width: 216,
+        height: 324,
+        color: "#ffffff",
+        textAlign: "left",
+      }}
+    >
+      <img
+        alt=""
+        aria-hidden="true"
+        src={UPCOMING_MATCH_CARD_BG}
+        className="pointer-events-none absolute inset-0 size-full object-cover"
+        width={216}
+        height={324}
+        loading="eager"
+        fetchPriority="high"
+        decoding="async"
+      />
+      <div
+        className="absolute inset-0"
+        style={{
+          padding: 16,
+        }}
+      >
+        <div
+          style={{
+            width: 183,
+            height: "100%",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "space-between",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 16,
+              width: "100%",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <div
+                style={{
+                  height: 20,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "0 4px",
+                  borderRadius: 6,
+                  background: "#0e4924",
+                }}
+              >
+                <p
+                  style={{
+                    margin: 0,
+                    paddingTop: 2,
+                    fontFamily: "var(--font-paperlogy)",
+                    fontWeight: 600,
+                    fontSize: 14,
+                    lineHeight: 1,
+                    color: "#ffffff",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {formatMatchTypeLabel(match.matchType)}
+                </p>
+              </div>
+              <div
+                style={{
+                  height: 20,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "0 4px",
+                  borderRadius: 6,
+                  background: "#0e4924",
+                }}
+              >
+                <p
+                  style={{
+                    margin: 0,
+                    paddingTop: 1,
+                    fontFamily: "var(--font-paperlogy)",
+                    fontWeight: 600,
+                    fontSize: 14,
+                    letterSpacing: "-1.4px",
+                    lineHeight: 1,
+                    color: "#ffffff",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {match.playerCount}
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, width: "100%" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, width: "100%" }}>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontFamily: "var(--font-paperlogy)",
+                      fontWeight: 600,
+                      fontSize: 14,
+                      lineHeight: 1,
+                      color: "#ffffff",
+                    }}
+                  >
+                    {formatMonthLabel(match.matchDate)}
+                  </p>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontFamily: "var(--font-paperlogy)",
+                      fontWeight: 700,
+                      fontSize: 20,
+                      lineHeight: 1.1,
+                      color: "#ffffff",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {formatDateTimeLabel(match.matchDate, match.startTime)}
+                  </p>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 2, width: "100%" }}>
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      minWidth: 0,
+                      maxWidth: match.locationLink ? "calc(100% - 22px)" : "100%",
+                      flexShrink: 1,
+                    }}
+                  >
+                    <p
+                      title={match.location}
+                      style={{
+                        margin: 0,
+                        display: "block",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        fontFamily: "var(--font-paperlogy)",
+                        fontWeight: 700,
+                        fontSize: 20,
+                        lineHeight: 1.1,
+                        color: "#ffffff",
+                      }}
+                    >
+                      {match.location}
+                    </p>
+                  </div>
+                  {match.locationLink ? (
+                    <button
+                      type="button"
+                      onClick={handleCopyLocationLink}
+                      aria-label="장소 링크 복사"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: 20,
+                        height: 20,
+                        minWidth: 20,
+                        minHeight: 20,
+                        maxWidth: 20,
+                        maxHeight: 20,
+                        flexShrink: 0,
+                        background: "transparent",
+                        border: 0,
+                        padding: 0,
+                        margin: 0,
+                        lineHeight: 0,
+                        overflow: "hidden",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <CopyIcon />
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+
+              <p
+                style={{
+                  margin: 0,
+                  fontFamily: "var(--font-pretendard)",
+                  fontWeight: 600,
+                  fontSize: 14,
+                  lineHeight: 1,
+                  color: "#cbe8d7",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {formatDurationLabel(match.startTime, match.endTime, match.quarterCount)}
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, width: "100%" }}>
+            <p
+              style={{
+                margin: 0,
+                fontFamily: "var(--font-paperlogy)",
+                fontWeight: 700,
+                fontSize: 20,
+                lineHeight: 1,
+                color: "#cbe8d7",
+              }}
+            >
+              VS
+            </p>
+            <p
+              title={match.opponentName}
+              style={{
+                margin: 0,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                fontFamily: "var(--font-paperlogy)",
+                fontWeight: 700,
+                fontSize: 32,
+                lineHeight: 1,
+                color: "#ffffff",
+              }}
+            >
+              {match.opponentName}
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface MainScreenProps {
   onNavigateToMatches: () => void;
   cachedData?: any; // ✅ 캐시 데이터 추가
@@ -369,11 +753,13 @@ export default function MainScreen({
   cachedData,
   isLoadingCache,
 }: MainScreenProps) {
-  const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
+  const [selectedMatch, setSelectedMatch] = useState<CompletedMatch | null>(null);
   const [isDownloadingMatchImage, setIsDownloadingMatchImage] = useState(false);
-  const [remoteMatches, setRemoteMatches] = useState<Match[]>(
+  const [loadedMatchCardImages, setLoadedMatchCardImages] = useState<Record<string, boolean>>({});
+  const [remoteMatches, setRemoteMatches] = useState<CompletedMatch[]>(
     [],
   );
+  const [remoteRegisteredMatches, setRemoteRegisteredMatches] = useState<RegisteredMatch[]>([]);
   const [remoteScores, setRemoteScores] = useState<any[]>([]); // Supabase Scores 데이터 저장
   const [remoteParticipants, setRemoteParticipants] = useState<
     any[]
@@ -386,7 +772,7 @@ export default function MainScreen({
 
   // 실제 데이터 로드 (기존 로컬 스토리지)
   const {
-    recentMatches,
+    matches: allLocalMatches,
     playerStats: realPlayerStats,
     isLoading,
   } = useMatchData();
@@ -399,10 +785,13 @@ export default function MainScreen({
       setRemoteScores(cachedData.scores || []);
       setRemoteParticipants(cachedData.participants || []);
       setRemoteMOMs(cachedData.moms || []);
+      setRemoteRegisteredMatches(cachedData.matches || []);
 
       // ✅ 캐시된 matches 데이터 변환
       if (cachedData.matches && cachedData.matches.length > 0) {
-        const loadedMatches: Match[] = cachedData.matches.map(
+        const loadedMatches: CompletedMatch[] = cachedData.matches
+          .filter((match: any) => Boolean(match["isCompleted"] ?? match["is_completed"]))
+          .map(
           (match: any, index: number) => {
             let formattedDate = "N/A";
             if (match["matchDate"] || match["날짜"]) {
@@ -526,9 +915,7 @@ export default function MainScreen({
     }
   }, [cachedData]);
 
-  // ✅ Supabase 캐시 데이터 우선 사용! (모든 디바이스에서 동일한 데이터)
-  // ✅ 최신순 정렬: 날짜 기준 내림차순
-  const matches: Match[] =
+  const completedMatches: CompletedMatch[] =
     remoteMatches.length > 0
       ? remoteMatches.sort((a, b) => {
           // 날짜 문자열을 Date 객체로 변환하여 비교
@@ -536,8 +923,9 @@ export default function MainScreen({
           const dateB = new Date(b.date.replace(/\./g, "-"));
           return dateB.getTime() - dateA.getTime(); // 내림차순 (최신 날짜가 왼쪽)
         })
-      : recentMatches.length > 0
-        ? recentMatches
+      : allLocalMatches.length > 0
+        ? allLocalMatches
+            .filter((match) => match.isCompleted)
             .map((match, index) => {
               console.log(
                 "💾 LocalStorage 매치 데이터:",
@@ -657,7 +1045,108 @@ export default function MainScreen({
             })
         : [];
 
-  console.log("🎯 최종 매치 배열:", matches);
+  const upcomingMatches: RegisteredMatch[] =
+    remoteRegisteredMatches.length > 0
+      ? [...remoteRegisteredMatches]
+          .filter((match) => !match.isCompleted)
+          .sort(
+            (a, b) =>
+              new Date(b.matchDate).getTime() - new Date(a.matchDate).getTime(),
+          )
+      : [...allLocalMatches]
+          .filter((match) => !match.isCompleted)
+          .sort(
+            (a, b) =>
+              new Date(b.matchDate).getTime() - new Date(a.matchDate).getTime(),
+          );
+
+  const matchCards: Array<
+    | { kind: "completed"; id: string; match: CompletedMatch }
+    | { kind: "upcoming"; id: string; match: RegisteredMatch }
+  > = [
+    ...upcomingMatches.map((match) => ({
+      kind: "upcoming" as const,
+      id: `upcoming-${match.id}`,
+      match,
+    })),
+    ...completedMatches.map((match) => ({
+      kind: "completed" as const,
+      id: `completed-${match.id}`,
+      match,
+    })),
+  ].sort((a, b) => {
+    const dateA =
+      a.kind === "upcoming"
+        ? new Date(a.match.matchDate).getTime()
+        : new Date(a.match.date.replace(/\./g, "-")).getTime();
+    const dateB =
+      b.kind === "upcoming"
+        ? new Date(b.match.matchDate).getTime()
+        : new Date(b.match.date.replace(/\./g, "-")).getTime();
+    return dateB - dateA;
+  });
+
+  console.log("🎯 최종 매치 카드 배열:", matchCards);
+
+  useEffect(() => {
+    const completedImageSources = Array.from(
+      new Set(
+        matchCards
+          .filter((card) => card.kind === "completed")
+          .map((card) => card.match.imageUrl || DEFAULT_MATCH_IMAGE),
+      ),
+    );
+
+    if (completedImageSources.length === 0) {
+      setLoadedMatchCardImages({});
+      return;
+    }
+
+    let isCancelled = false;
+
+    completedImageSources.forEach((src) => {
+      if (loadedMatchCardImages[src]) {
+        return;
+      }
+
+      const image = new Image();
+      image.crossOrigin = "anonymous";
+
+      const markLoaded = () => {
+        if (isCancelled) {
+          return;
+        }
+
+        setLoadedMatchCardImages((prev) => {
+          if (prev[src]) {
+            return prev;
+          }
+
+          return { ...prev, [src]: true };
+        });
+      };
+
+      image.onload = markLoaded;
+      image.onerror = markLoaded;
+      image.src = src;
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [matchCards, loadedMatchCardImages]);
+
+  const completedImageSources = Array.from(
+    new Set(
+      matchCards
+        .filter((card) => card.kind === "completed")
+        .map((card) => card.match.imageUrl || DEFAULT_MATCH_IMAGE),
+    ),
+  );
+
+  const areMatchCardImagesReady = completedImageSources.every(
+    (src) => loadedMatchCardImages[src],
+  );
 
   // ✅ Supabase MOM 데이터 사용
   const momRecords: MOMRecord[] = remoteMOMs.map((mom: any) => {
@@ -1067,14 +1556,24 @@ export default function MainScreen({
                   <MatchCardSkeleton />
                   <MatchCardSkeleton />
                 </>
+              ) : !areMatchCardImagesReady ? (
+                <>
+                  <MatchCardSkeleton />
+                  <MatchCardSkeleton />
+                  <MatchCardSkeleton />
+                </>
               ) : (
-                matches.map((match) => (
-                  <MatchArtwork
-                    key={match.id}
-                    match={match}
-                    onClick={() => setSelectedMatch(match)}
-                  />
-                ))
+                matchCards.map((card) =>
+                  card.kind === "upcoming" ? (
+                    <UpcomingMatchCard key={card.id} match={card.match} />
+                  ) : (
+                    <MatchArtwork
+                      key={card.id}
+                      match={card.match}
+                      onClick={() => setSelectedMatch(card.match)}
+                    />
+                  ),
+                )
               )}
             </div>
           </div>
