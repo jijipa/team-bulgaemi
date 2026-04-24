@@ -12,7 +12,7 @@ import { CardMom } from "../../imports/CardMom";
 import { toast } from "sonner";
 
 const UPCOMING_MATCH_CARD_BG =
-  "https://www.figma.com/api/mcp/asset/3779d76a-0df8-4c66-9114-140612cf026d";
+  "https://i.imgur.com/djSmkjp.png";
 // ✅ 기본 매치 카드 배경 이미지
 const DEFAULT_MATCH_IMAGE = UPCOMING_MATCH_CARD_BG;
 const TEAM_NAME = "팀불개미";
