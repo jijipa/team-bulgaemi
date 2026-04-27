@@ -1,5 +1,6 @@
 import svgPaths from "./svg-3vz7byxyqa";
 import svgPathsMom from "./svg-63gix63taq";
+import { teamConfig } from "../app/config/team";
 
 interface CardMomProps {
   matchDate: string; // YY.MM.DD 형식
@@ -52,12 +53,12 @@ function IconNumber({ number, left }: { number: string; left: string }) {
             <g filter="url(#filter0_d_2062_111)" id="Group">
               <path
                 d={svgPaths.p2f2e7000}
-                fill="var(--fill-0, #283135)"
+                fill={teamConfig.leaderboardJerseySecondaryColor}
                 id="Vector"
               />
               <path
                 d={svgPaths.p11af6780}
-                fill="var(--fill-0, #E24444)"
+                fill={teamConfig.leaderboardJerseyPrimaryColor}
                 id="Vector_2"
               />
             </g>
@@ -103,8 +104,9 @@ function IconNumber({ number, left }: { number: string; left: string }) {
       </div>
       {/* 번호 텍스트 오버레이 */}
       <p
-        className="absolute inset-0 flex items-center justify-center text-[32px] leading-[32px] text-center not-italic font-extrabold text-[#283135]"
+        className="absolute inset-0 flex items-center justify-center text-[32px] leading-[32px] text-center not-italic font-extrabold"
         style={{
+          color: teamConfig.leaderboardJerseyNumberColor,
           fontFamily: "var(--font-anton)",
           top: "50%",
           left: "50%",

@@ -1,14 +1,18 @@
 import { Match, Score, Player, Participant, Mercenary, MOM, GoalEvent } from "../types/data";
+import { teamConfig } from "../config/team";
 
 // LocalStorage 키
+const keyWithNamespace = (suffix: string) =>
+  `${teamConfig.storageNamespace}_${suffix}`;
+
 const STORAGE_KEYS = {
-  MATCHES: "soccer_matches",
-  SCORES: "soccer_scores",
-  PLAYERS: "soccer_players",
-  PARTICIPANTS: "soccer_participants",
-  MERCENARIES: "soccer_mercenaries",
-  MOMS: "soccer_moms",
-  GOAL_EVENTS: "soccer_goal_events",
+  MATCHES: keyWithNamespace("matches"),
+  SCORES: keyWithNamespace("scores"),
+  PLAYERS: keyWithNamespace("players"),
+  PARTICIPANTS: keyWithNamespace("participants"),
+  MERCENARIES: keyWithNamespace("mercenaries"),
+  MOMS: keyWithNamespace("moms"),
+  GOAL_EVENTS: keyWithNamespace("goal_events"),
 };
 
 // ============= 매치 데이터 =============

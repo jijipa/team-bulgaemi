@@ -2,6 +2,7 @@ import { useRef, useState, useEffect, type ChangeEvent } from "react";
 import { Match } from "../types/data";
 import { useMatchData } from "../hooks/useMatchData";
 import svgPaths from "../../imports/svg-pst6m3rsp2";
+import matchEmptyStateIcon from "../../assets/match-empty-state-icon.svg";
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
 import MatchActionsSheet from "./MatchActionsSheet";
@@ -43,6 +44,7 @@ export interface MatchListItem {
 }
 
 interface MatchListScreenProps {
+  canEdit: boolean;
   onBack: () => void;
   onAddMatch: () => void;
   onScoreMatch: (matchId: string) => void; // 스코어 버튼 클릭 핸들러
@@ -51,7 +53,7 @@ interface MatchListScreenProps {
   onMatchImageSaved?: () => void;
 }
 
-export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEditScore, onMomSaved, onMatchImageSaved }: MatchListScreenProps) {
+export default function MatchListScreen({ canEdit, onBack, onAddMatch, onScoreMatch, onEditScore, onMomSaved, onMatchImageSaved }: MatchListScreenProps) {
   // 실제 데이터 로드
   const { matches: realMatches, refreshData } = useMatchData();
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -430,24 +432,42 @@ export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEd
       </div>
 
       {/* Match List */}
-      <div className="absolute bottom-[92px] content-stretch flex flex-col gap-[48px] items-start left-0 right-0 top-[96px] w-full overflow-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+      <div className={`absolute content-stretch flex flex-col gap-[48px] items-start left-0 right-0 top-[96px] w-full overflow-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] ${canEdit ? "bottom-[92px]" : "bottom-0"}`}>
         {isRefreshing ? (
           <MonthSkeleton />
         ) : sortedMonths.length === 0 ? (
-          <div className="content-stretch flex flex-col gap-[12px] items-center justify-center min-h-[360px] px-[20px] relative shrink-0 w-full">
-            <p
-              className="leading-[normal] not-italic text-[#242b35] text-[22px] text-center"
-              style={{ fontFamily: "var(--font-paperlogy)", fontWeight: 700 }}
-            >
-              아직 등록된 매치가 없어요
-            </p>
-            <p
-              className="leading-[22px] not-italic text-[#82828f] text-[15px] text-center whitespace-pre-wrap"
-              style={{ fontFamily: "var(--font-pretendard)", fontWeight: 500 }}
-            >
-              아래의 매치 추가 버튼으로 첫 경기를 등록하면{"\n"}
-              Supabase에 저장되고 이 목록에 표시됩니다.
-            </p>
+          <div
+            className="content-stretch flex flex-col gap-[8px] items-center justify-center relative shrink-0 w-full"
+            style={{
+              minHeight: "calc(100dvh - 188px)",
+              paddingLeft: 20,
+              paddingRight: 20,
+            }}
+          >
+            <div className="relative shrink-0 size-[100px]">
+              <img
+                alt=""
+                aria-hidden="true"
+                className="absolute inset-0 block size-full max-w-none"
+                src={matchEmptyStateIcon}
+              />
+            </div>
+            <div className="content-stretch flex flex-col gap-[8px] items-center relative shrink-0">
+              <p
+                className="leading-[normal] not-italic relative shrink-0 text-[#242b35] text-[18px] whitespace-nowrap"
+                style={{ fontFamily: "var(--font-paperlogy)", fontWeight: 600 }}
+              >
+                아직 등록된 매치가 없어요
+              </p>
+              <div className="content-stretch flex flex-col items-center relative shrink-0">
+                <p
+                  className="leading-[24px] not-italic relative shrink-0 text-[#a2a8b0] text-[16px] text-center tracking-[-0.32px] whitespace-nowrap"
+                  style={{ fontFamily: "var(--font-pretendard)", fontWeight: 500 }}
+                >
+                  지금 바로 첫번째 매치를 등록해보세요
+                </p>
+              </div>
+            </div>
           </div>
         ) : (
           sortedMonths.map((month) => (
@@ -506,15 +526,24 @@ export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEd
 
                           {/* Score or Score Button */}
                           {match.status === "pending" ? (
-                            <button
-                              onClick={() => onScoreMatch(match.id)}
-                              className="content-stretch flex items-center justify-center px-[12px] py-[8px] relative rounded-[58px] shrink-0"
-                            >
-                              <div className="absolute border border-[#1a1a1c] border-solid inset-0 pointer-events-none rounded-[58px]" />
-                              <p className="leading-[normal] not-italic relative shrink-0 text-[#1a1a1c] text-[14px]" style={{ fontFamily: 'var(--font-paperlogy)', fontWeight: 500 }}>
-                                스코어 입력
-                              </p>
-                            </button>
+                            canEdit ? (
+                              <button
+                                onClick={() => onScoreMatch(match.id)}
+                                className="content-stretch flex items-center justify-center px-[12px] py-[8px] relative rounded-[58px] shrink-0"
+                              >
+                                <div className="absolute border border-[#1a1a1c] border-solid inset-0 pointer-events-none rounded-[58px]" />
+                                <p className="leading-[normal] not-italic relative shrink-0 text-[#1a1a1c] text-[14px]" style={{ fontFamily: 'var(--font-paperlogy)', fontWeight: 500 }}>
+                                  스코어 입력
+                                </p>
+                              </button>
+                            ) : (
+                              <div className="content-stretch flex items-center justify-center px-[12px] py-[8px] relative rounded-[58px] shrink-0 bg-[#f6f7fa]">
+                                <div className="absolute border border-[#d8dbe3] border-solid inset-0 pointer-events-none rounded-[58px]" />
+                                <p className="leading-[normal] not-italic relative shrink-0 text-[#82828f] text-[14px]" style={{ fontFamily: 'var(--font-paperlogy)', fontWeight: 500 }}>
+                                  스코어 미입력
+                                </p>
+                              </div>
+                            )
                           ) : (
                             <div className="bg-[#f2f2f2] content-stretch flex gap-[4px] items-center leading-[40px] not-italic px-[2px] relative rounded-[8px] shrink-0" style={{ fontFamily: 'var(--font-anton)' }}>
                               <p className={`relative shrink-0 ${scoreColor} text-[28px] text-center w-[28px] whitespace-pre-wrap`}>
@@ -528,19 +557,21 @@ export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEd
                           )}
 
                           {/* More Button */}
-                          <button
-                            className="relative shrink-0 size-[40px]"
-                            onClick={() => {
-                              setSelectedMatchId(match.id);
-                              setShowMoreMenu(true);
-                            }}
-                          >
-                            <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 40 40">
-                              <g>
-                                <path d={svgPaths.p119e640} fill="var(--fill-0, #82828F)" />
-                              </g>
-                            </svg>
-                          </button>
+                          {canEdit ? (
+                            <button
+                              className="relative shrink-0 size-[40px]"
+                              onClick={() => {
+                                setSelectedMatchId(match.id);
+                                setShowMoreMenu(true);
+                              }}
+                            >
+                              <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 40 40">
+                                <g>
+                                  <path d={svgPaths.p119e640} fill="var(--fill-0, #82828F)" />
+                                </g>
+                              </svg>
+                            </button>
+                          ) : null}
                         </div>
                       </div>
                     </div>
@@ -553,20 +584,22 @@ export default function MatchListScreen({ onBack, onAddMatch, onScoreMatch, onEd
       </div>
 
       {/* Add Match Button */}
-      <div className="fixed backdrop-blur-[2.5px] bg-[rgba(255,255,255,0.5)] bottom-0 left-0 right-0 z-20 content-stretch flex flex-col items-start pb-[24px] pt-[16px] px-[20px] border-t border-[rgba(255,255,255,0.5)]">
-        <button
-          onClick={onAddMatch}
-          className="bg-[#242b35] content-stretch flex gap-[8px] items-center justify-center not-italic p-[10px] relative rounded-[8px] w-full h-[52px] text-[18px]"
-        >
-          <p className="leading-[normal] relative shrink-0 text-white" style={{ fontFamily: 'var(--font-paperlogy)', fontWeight: 500 }}>
-            매치 추가
-          </p>
-        </button>
-      </div>
+      {canEdit ? (
+        <div className="fixed backdrop-blur-[2.5px] bg-[rgba(255,255,255,0.5)] bottom-0 left-0 right-0 z-20 content-stretch flex flex-col items-start pb-[24px] pt-[16px] px-[20px] border-t border-[rgba(255,255,255,0.5)]">
+          <button
+            onClick={onAddMatch}
+            className="bg-[#242b35] content-stretch flex gap-[8px] items-center justify-center not-italic p-[10px] relative rounded-[8px] w-full h-[52px] text-[18px]"
+          >
+            <p className="leading-[normal] relative shrink-0 text-white" style={{ fontFamily: 'var(--font-paperlogy)', fontWeight: 500 }}>
+              매치 추가
+            </p>
+          </button>
+        </div>
+      ) : null}
 
       {/* More Menu - Match Actions Sheet */}
       <AnimatePresence>
-        {showMoreMenu && selectedMatchId && (() => {
+        {canEdit && showMoreMenu && selectedMatchId && (() => {
           const selectedMatch = matches.find((match) => match.id === selectedMatchId);
           const canSelectMom = selectedMatch?.status === "completed";
           const hasImage = Boolean(selectedMatch?.imageUrl);

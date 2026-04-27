@@ -16,6 +16,7 @@ import {
   saveGoalEvents,
   saveMOMs,
   saveMatches,
+  savePlayers,
   saveParticipants,
   saveScores,
 } from "./utils/storage";
@@ -23,6 +24,7 @@ import {
   fetchAppDataFromSupabase,
   replaceParticipantsForMatchInSupabase,
 } from "./services/supabaseAppData";
+import { teamConfig } from "./config/team";
 
 interface Player {
   id: string;
@@ -41,6 +43,34 @@ type AppRoute =
   | { name: "newMatch" }
   | { name: "participants"; matchId: string }
   | { name: "score"; matchId: string };
+
+const getEditAccessSessionKey = () =>
+  `${teamConfig.storageNamespace}:edit-access-granted`;
+
+const hasValidEditKeyInSearch = (search: string) => {
+  if (!teamConfig.editAccessKey) return true;
+
+  const params = new URLSearchParams(search);
+  return (
+    params.get(teamConfig.editAccessQueryParam) ===
+    teamConfig.editAccessKey
+  );
+};
+
+const getInitialEditAccess = (isLocalhost: boolean) => {
+  if (isLocalhost || !teamConfig.editAccessKey) {
+    return true;
+  }
+
+  if (hasValidEditKeyInSearch(window.location.search)) {
+    return true;
+  }
+
+  return (
+    window.sessionStorage.getItem(getEditAccessSessionKey()) ===
+    "true"
+  );
+};
 
 const parseRoute = (pathname: string): AppRoute => {
   const normalizedPath = pathname.replace(/\/+$/, "") || "/";
@@ -77,32 +107,7 @@ const buildPath = (route: AppRoute): string => {
   }
 };
 
-const players: Player[] = [
-  { id: "1", number: "1", name: "박지황" },
-  { id: "2", number: "4", name: "서준혁" },
-  { id: "3", number: "6", name: "강석민" },
-  { id: "4", number: "7", name: "김민겸" },
-  { id: "5", number: "11", name: "정이삭" },
-  { id: "6", number: "12", name: "장준희" },
-  { id: "7", number: "19", name: "김동범" },
-  { id: "8", number: "23", name: "강민수" },
-  { id: "9", number: "27", name: "양재원" },
-  { id: "10", number: "30", name: "박성민" },
-  { id: "11", number: "49", name: "이현재" },
-  { id: "12", number: "66", name: "김대영" },
-  { id: "13", number: "77", name: "양준희" },
-  { id: "14", number: "88", name: "박효창" },
-  { id: "15", number: "96", name: "이찬호" },
-  { id: "16", number: "99", name: "전민수" },
-  { id: "17", number: "8", name: "한창희" },
-  { id: "18", number: "0", name: "김대현" },
-  { id: "19", number: "0", name: "권혁수" },
-  { id: "20", number: "0", name: "권용찬" },
-  { id: "21", number: "0", name: "전용주" },
-  { id: "22", number: "0", name: "강대한" },
-  { id: "23", number: "0", name: "임수훈" },
-  { id: "24", number: "0", name: "박현민" },
-];
+const players: Player[] = teamConfig.players;
 
 interface PlayerCardProps {
   player: Player;
@@ -138,8 +143,8 @@ function PlayerCard({
                     d={svgPaths.p1257a430}
                     fill={
                       isSelected
-                        ? "var(--fill-0, #242B35)"
-                        : "var(--fill-0, #CECECE)"
+                        ? teamConfig.playerJerseySelectedColor
+                        : teamConfig.playerJerseyUnselectedColor
                     }
                   />
                 </g>
@@ -147,9 +152,14 @@ function PlayerCard({
             </div>
             <p
               className={`absolute inset-[18.75%] flex items-center justify-center leading-[40px] not-italic ${
-                isSelected ? "text-[#f2f2f2]" : "text-[#6e7783]"
+                isSelected ? "" : ""
               } text-[28px] text-center tracking-[0.28px]`}
-              style={{ fontFamily: "var(--font-anton)" }}
+              style={{
+                color: isSelected
+                  ? teamConfig.playerNumberSelectedColor
+                  : teamConfig.playerNumberUnselectedColor,
+                fontFamily: "var(--font-anton)",
+              }}
             >
               {player.number}
             </p>
@@ -175,7 +185,7 @@ function PlayerCard({
                 <g>
                   <path
                     d={svgPaths.p371c0d00}
-                    fill="var(--fill-0, #242B35)"
+                    fill={teamConfig.playerSelectionCheckColor}
                   />
                   <path
                     d={svgPaths.p1e582c80}
@@ -195,9 +205,15 @@ function PlayerCard({
 }
 
 export default function App() {
+  const isLocalhost =
+    window.location.hostname === "127.0.0.1" ||
+    window.location.hostname === "localhost";
   const appScrollRef = useRef<HTMLDivElement>(null);
   const [route, setRoute] = useState<AppRoute>(() =>
     parseRoute(window.location.pathname),
+  );
+  const [hasEditAccess, setHasEditAccess] = useState(() =>
+    getInitialEditAccess(isLocalhost),
   );
   const [selectedPlayers, setSelectedPlayers] = useState<
     Set<string>
@@ -260,14 +276,75 @@ export default function App() {
     setRoute(nextRoute);
   };
 
+  const syncEditAccessFromLocation = (options?: {
+    consumeKey?: boolean;
+  }) => {
+    if (isLocalhost || !teamConfig.editAccessKey) {
+      setHasEditAccess(true);
+      return true;
+    }
+
+    const sessionKey = getEditAccessSessionKey();
+    const params = new URLSearchParams(window.location.search);
+    const editKeyFromUrl = params.get(
+      teamConfig.editAccessQueryParam,
+    );
+    const hasUrlAccess =
+      editKeyFromUrl === teamConfig.editAccessKey;
+    const hasSessionAccess =
+      window.sessionStorage.getItem(sessionKey) === "true";
+    const nextAccess = hasUrlAccess || hasSessionAccess;
+
+    if (nextAccess) {
+      window.sessionStorage.setItem(sessionKey, "true");
+    }
+
+    if (hasUrlAccess && options?.consumeKey) {
+      params.delete(teamConfig.editAccessQueryParam);
+      const nextSearch = params.toString();
+      const nextUrl =
+        window.location.pathname +
+        (nextSearch ? `?${nextSearch}` : "");
+      window.history.replaceState(null, "", nextUrl);
+    }
+
+    setHasEditAccess(nextAccess);
+    return nextAccess;
+  };
+
+  useEffect(() => {
+    document.title = teamConfig.pageTitle;
+  }, []);
+
+  useEffect(() => {
+    syncEditAccessFromLocation({ consumeKey: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     const handlePopState = () => {
+      syncEditAccessFromLocation();
       setRoute(parseRoute(window.location.pathname));
     };
 
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
+
+  useEffect(() => {
+    if (
+      hasEditAccess ||
+      (route.name !== "newMatch" &&
+        route.name !== "participants" &&
+        route.name !== "score")
+    ) {
+      return;
+    }
+
+    setCurrentMatchId(null);
+    setIsEditMode(false);
+    navigateTo({ name: "matches" }, { replace: true });
+  }, [hasEditAccess, route]);
 
   useEffect(() => {
     if (route.name === "participants" || route.name === "score") {
@@ -290,10 +367,7 @@ export default function App() {
   useEffect(() => {
     // ✅ 항상 최신 선수 목록으로 업데이트
     console.log("📦 선수 데이터 업데이트 중...");
-    localStorage.setItem(
-      "soccer_players",
-      JSON.stringify(players),
-    );
+    savePlayers(players);
     console.log(
       "✅ 선수 데이터 업데이트 완료:",
       players.length + "명",
@@ -480,6 +554,7 @@ export default function App() {
   };
 
   const handleAddMatch = () => {
+    if (!hasEditAccess) return;
     navigateTo({ name: "newMatch" });
   };
 
@@ -489,6 +564,7 @@ export default function App() {
   };
 
   const handleScoreMatch = (matchId: string) => {
+    if (!hasEditAccess) return;
     // 스코어 버튼 클릭 시 선수 선택 화면으로 이동
     setCurrentMatchId(matchId); // 현재 득점 입력 중인 매치 ID 설정
     setSelectedPlayers(new Set()); // 선수 선택 초기화
@@ -500,6 +576,7 @@ export default function App() {
 
   // ✅ 스코어 수정 핸들러 추가
   const handleEditScore = async (matchId: string) => {
+    if (!hasEditAccess) return;
     try {
       console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
       console.log("📝 스코어 수정 모드 진입");
@@ -606,13 +683,26 @@ export default function App() {
     }
   };
 
-  const isScoreRoute = route.name === "score";
-  const isPlayerSelectionRoute = route.name === "participants";
-  const isMatchListRoute = route.name === "matches";
-  const isMatchRegistrationRoute = route.name === "newMatch";
+  const isProtectedRoute =
+    route.name === "newMatch" ||
+    route.name === "participants" ||
+    route.name === "score";
+  const isScoreRoute = hasEditAccess && route.name === "score";
+  const isPlayerSelectionRoute =
+    hasEditAccess && route.name === "participants";
+  const isMatchRegistrationRoute =
+    hasEditAccess && route.name === "newMatch";
+  const isMatchListRoute =
+    route.name === "matches" ||
+    (!hasEditAccess && isProtectedRoute);
 
   return (
     <div ref={appScrollRef} className="bg-white relative h-screen min-h-screen w-full overflow-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+      {teamConfig.showDevModeBadge && isLocalhost ? (
+        <div className="fixed right-[12px] top-[12px] z-[100] rounded-full bg-[rgba(26,26,28,0.85)] px-[10px] py-[6px] text-[11px] text-white">
+          {teamConfig.name} local
+        </div>
+      ) : null}
       {isScoreRoute ? (
         <ScoreTracking
           selectedPlayers={players.filter((p) =>
@@ -755,7 +845,10 @@ export default function App() {
               </div>
 
               {/* Player Grid */}
-              <div className="content-center flex flex-wrap gap-[4px] items-center relative shrink-0 w-full mb-[96px]">
+              <div
+                className="content-center flex flex-wrap gap-[4px] items-center relative shrink-0 w-full mb-[96px]"
+                style={{ paddingBottom: "100px" }}
+              >
                 {players.map((player) => (
                   <PlayerCard
                     key={player.id}
@@ -828,6 +921,7 @@ export default function App() {
         )
       ) : isMatchListRoute ? (
         <MatchListScreen
+          canEdit={hasEditAccess}
           onBack={() => {
             setShouldRefetch(true); // ✅ 매치 리스트에서 메인으로 돌아갈 때 데이터 새로고침
             navigateTo({ name: "home" });

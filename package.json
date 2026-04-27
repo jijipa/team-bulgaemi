@@ -5,7 +5,11 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "dev": "vite"
+    "build:bulgaemi": "vite build --mode bulgaemi",
+    "build:jjfc": "vite build --mode jjfc",
+    "dev": "node scripts/run-dev.mjs",
+    "dev:bulgaemi": "vite --mode bulgaemi",
+    "dev:jjfc": "vite --mode jjfc"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",

@@ -22,6 +22,7 @@ import {
   replaceParticipantsForMatchInSupabase,
   replaceScoresForMatchInSupabase,
 } from "../services/supabaseAppData";
+import { teamConfig } from "../config/team";
 
 interface Player {
   id: string;
@@ -774,7 +775,7 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
         <div className="absolute content-stretch flex flex-col items-center left-[20px] top-[14px]">
           <div className="content-stretch flex font-semibold gap-[4px] items-start leading-[normal] not-italic relative shrink-0 text-[#7b8087] text-[18px]" style={{ fontFamily: 'var(--font-paperlogy)' }}>
             <p className="relative shrink-0">vs</p>
-            <p className="relative shrink-0">{opponentName || "팀불개미"}</p>
+            <p className="relative shrink-0">{opponentName || "상대팀"}</p>
           </div>
         </div>
       </div>
@@ -900,7 +901,7 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
                 <div className="content-stretch flex flex-[1_0_0] flex-col gap-[8px] items-center min-h-px min-w-px relative">
                   <div className="content-stretch flex flex-col gap-[4px] items-center not-italic relative shrink-0">
                     <p className="font-semibold leading-[normal] relative shrink-0 text-[#242b35] text-[18px]" style={{ fontFamily: 'var(--font-pretendard)' }}>
-                      팀불개미
+                      {teamConfig.name}
                     </p>
                     <button
                       onClick={() => setShowScorerSheet(true)}
@@ -935,7 +936,7 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
                 <div className="content-stretch flex flex-[1_0_0] flex-col gap-[8px] items-center min-h-px min-w-px relative">
                   <div className="content-stretch flex flex-col gap-[4px] items-center not-italic relative shrink-0">
                     <p className="font-semibold leading-[normal] relative shrink-0 text-[#242b35] text-[18px]" style={{ fontFamily: 'var(--font-pretendard)' }}>
-                      {opponentName || "팀불개미"}
+                      {opponentName || "상대팀"}
                     </p>
                     <button
                       onClick={handleOpponentGoal}

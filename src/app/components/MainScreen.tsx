@@ -10,12 +10,9 @@ import soccerBallSvg from "../../imports/svg-aypr951miv";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 import { CardMom } from "../../imports/CardMom";
 import { toast } from "sonner";
-
-const UPCOMING_MATCH_CARD_BG =
-  "https://i.imgur.com/djSmkjp.png";
-// ✅ 기본 매치 카드 배경 이미지
-const DEFAULT_MATCH_IMAGE = UPCOMING_MATCH_CARD_BG;
-const TEAM_NAME = "팀불개미";
+import { teamConfig } from "../config/team";
+const DEFAULT_MATCH_IMAGE = teamConfig.defaultMatchImageUrl;
+const TEAM_NAME = teamConfig.name;
 const COPY_ICON_ASSET =
   "https://www.figma.com/api/mcp/asset/37c84f9e-0914-4475-96de-5d30bcdd9051";
 
@@ -53,6 +50,34 @@ export interface PlayerStats {
 type DisplayScorer = {
   name: string;
   goals: number;
+};
+
+const getMomRecordSortValue = (matchDate: string) => {
+  const normalized = matchDate.trim();
+
+  if (normalized.includes("T") || normalized.includes("-")) {
+    const date = new Date(normalized);
+    return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+  }
+
+  const parts = normalized.split(".");
+  if (parts.length !== 3) return 0;
+
+  const [rawYear, rawMonth, rawDay] = parts;
+  const year =
+    rawYear.length === 2 ? Number(`20${rawYear}`) : Number(rawYear);
+  const month = Number(rawMonth);
+  const day = Number(rawDay);
+
+  if (
+    Number.isNaN(year) ||
+    Number.isNaN(month) ||
+    Number.isNaN(day)
+  ) {
+    return 0;
+  }
+
+  return new Date(year, month - 1, day).getTime();
 };
 
 const getDisplayScorers = (match: CompletedMatch): DisplayScorer[] => {
@@ -105,6 +130,11 @@ const drawCenteredText = (
   context.fillText(text, x, y, maxWidth);
 };
 
+const getMatchImageSrc = (imageUrl?: string) =>
+  teamConfig.ignoreRemoteMatchImages
+    ? DEFAULT_MATCH_IMAGE
+    : imageUrl || DEFAULT_MATCH_IMAGE;
+
 const downloadMatchImage = async (match: CompletedMatch) => {
   const size = 1080;
   const canvas = document.createElement("canvas");
@@ -118,7 +148,7 @@ const downloadMatchImage = async (match: CompletedMatch) => {
   canvas.height = size;
 
   try {
-    const image = await loadCanvasImage(match.imageUrl || DEFAULT_MATCH_IMAGE);
+    const image = await loadCanvasImage(getMatchImageSrc(match.imageUrl));
     drawCoverImage(context, image, size);
   } catch {
     const fallback = await loadCanvasImage(DEFAULT_MATCH_IMAGE);
@@ -181,7 +211,7 @@ const downloadMatchImage = async (match: CompletedMatch) => {
   const link = document.createElement("a");
   const objectUrl = URL.createObjectURL(blob);
   link.href = objectUrl;
-  link.download = `team-bulgaemi-${match.date.replace(/\./g, "-")}-${match.id}.png`;
+  link.download = `${teamConfig.downloadFilePrefix}-${match.date.replace(/\./g, "-")}-${match.id}.png`;
   link.click();
   URL.revokeObjectURL(objectUrl);
 };
@@ -223,7 +253,7 @@ function MatchArtwork({ match, square = false, onClick }: MatchArtworkProps) {
         <ImageWithFallback
           alt=""
           className="absolute max-w-none object-cover size-full"
-          src={match.imageUrl || DEFAULT_MATCH_IMAGE}
+          src={getMatchImageSrc(match.imageUrl)}
           fallbackSrc={DEFAULT_MATCH_IMAGE}
           crossOrigin="anonymous"
         />
@@ -514,7 +544,7 @@ function UpcomingMatchCard({ match }: UpcomingMatchCardProps) {
       <img
         alt=""
         aria-hidden="true"
-        src={UPCOMING_MATCH_CARD_BG}
+        src={DEFAULT_MATCH_IMAGE}
         className="pointer-events-none absolute inset-0 size-full object-cover"
         width={216}
         height={324}
@@ -1088,17 +1118,19 @@ export default function MainScreen({
 
   console.log("🎯 최종 매치 카드 배열:", matchCards);
 
-  useEffect(() => {
-    const completedImageSources = Array.from(
-      new Set(
-        matchCards
-          .filter((card) => card.kind === "completed")
-          .map((card) => card.match.imageUrl || DEFAULT_MATCH_IMAGE),
-      ),
-    );
+  const completedImageSources = Array.from(
+    new Set(
+      matchCards
+        .filter((card) => card.kind === "completed")
+        .map((card) => getMatchImageSrc(card.match.imageUrl)),
+    ),
+  );
 
+  useEffect(() => {
     if (completedImageSources.length === 0) {
-      setLoadedMatchCardImages({});
+      setLoadedMatchCardImages((prev) =>
+        Object.keys(prev).length === 0 ? prev : {},
+      );
       return;
     }
 
@@ -1134,15 +1166,7 @@ export default function MainScreen({
     return () => {
       isCancelled = true;
     };
-  }, [matchCards, loadedMatchCardImages]);
-
-  const completedImageSources = Array.from(
-    new Set(
-      matchCards
-        .filter((card) => card.kind === "completed")
-        .map((card) => card.match.imageUrl || DEFAULT_MATCH_IMAGE),
-    ),
-  );
+  }, [completedImageSources, loadedMatchCardImages]);
 
   const areMatchCardImagesReady = completedImageSources.every(
     (src) => loadedMatchCardImages[src],
@@ -1238,6 +1262,11 @@ export default function MainScreen({
       matchId: mom["matchId"] || mom["경기ID"],
     };
   });
+  const sortedMomRecords = [...momRecords].sort(
+    (a, b) =>
+      getMomRecordSortValue(b.matchDate) -
+      getMomRecordSortValue(a.matchDate),
+  );
 
   // 실제 선수 통계 데이터 변환 (기존 UI 형식에 맞춤)
   const allPlayers = getPlayers(); // LocalStorage에서 33명 전체 선수 데이터 가져오기
@@ -1478,7 +1507,7 @@ export default function MainScreen({
                     </clipPath>
                   </defs>
                   <image
-                    href="https://i.imgur.com/JrwAlWz.png"
+                    href={teamConfig.logoUrl}
                     x="0"
                     y="0"
                     width="28"
@@ -1500,7 +1529,7 @@ export default function MainScreen({
                 className="font-bold leading-[normal] not-italic relative shrink-0 text-[#1a1a1c] text-[20px]"
                 style={{ fontFamily: "var(--font-paperlogy)" }}
               >
-                팀불개미
+                {TEAM_NAME}
               </p>
             </div>
           </div>
@@ -1598,7 +1627,7 @@ export default function MainScreen({
                   <MOMCardSkeleton />
                 </>
               ) : (
-                momRecords.map((mom) => {
+                sortedMomRecords.map((mom) => {
                   // 선수 배열인지 확인하여 카드 너비 결정
                   const isMultiplePlayers =
                     Array.isArray(mom.playerName) &&
@@ -1755,19 +1784,20 @@ export default function MainScreen({
                                   <g>
                                     <path
                                       d={svgPaths.p1b424700}
-                                      fill="var(--fill-0, #283135)"
+                                      fill={teamConfig.leaderboardJerseySecondaryColor}
                                     />
                                     <path
                                       d={svgPaths.p1c0fd00}
-                                      fill="var(--fill-0, #E24444)"
+                                      fill={teamConfig.leaderboardJerseyPrimaryColor}
                                     />
                                   </g>
                                 </g>
                               </svg>
                               {/* 번호 텍스트 */}
                               <p
-                                className="absolute inset-0 flex items-center justify-center text-[10.5px] leading-[15px] tracking-[0.105px] text-center text-[#283135] not-italic"
+                                className="absolute inset-0 flex items-center justify-center text-[10.5px] leading-[15px] tracking-[0.105px] text-center not-italic"
                                 style={{
+                                  color: teamConfig.leaderboardJerseyNumberColor,
                                   fontFamily:
                                     "var(--font-anton)",
                                 }}
