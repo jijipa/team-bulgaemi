@@ -4,12 +4,16 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
+    "generate:utilities": "npx @tailwindcss/cli -i ./src/styles/utilities-source.css -o ./src/styles/generated-utilities.css --minify",
+    "prebuild": "npm run generate:utilities",
+    "prebuild:bulgaemi": "npm run generate:utilities",
+    "prebuild:jjfc": "npm run generate:utilities",
     "build": "vite build",
     "build:bulgaemi": "vite build --mode bulgaemi",
     "build:jjfc": "vite build --mode jjfc",
     "dev": "node scripts/run-dev.mjs",
-    "dev:bulgaemi": "vite --mode bulgaemi",
-    "dev:jjfc": "vite --mode jjfc"
+    "dev:bulgaemi": "node scripts/run-dev.mjs bulgaemi",
+    "dev:jjfc": "node scripts/run-dev.mjs jjfc"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
@@ -67,8 +71,10 @@
     "vaul": "1.1.2"
   },
   "devDependencies": {
+    "@tailwindcss/cli": "^4.2.4",
     "@vitejs/plugin-react": "4.7.0",
     "playwright": "^1.59.1",
+    "tailwindcss": "^4.2.4",
     "vite": "6.3.5"
   },
   "peerDependencies": {

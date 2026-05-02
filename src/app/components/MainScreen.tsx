@@ -2,7 +2,9 @@ import { useState, useEffect } from "react";
 import { useMatchData } from "../hooks/useMatchData";
 import type { Match as RegisteredMatch } from "../types/data";
 import {
+  getParticipants,
   getPlayers,
+  getScores,
   getScoresByMatchId,
 } from "../utils/storage";
 import svgPaths from "../../imports/svg-fnwogjyv26";
@@ -35,6 +37,7 @@ export interface MOMRecord {
   playerName: string | string[]; // 단일 선수 또는 여러 선수
   playerNumber?: string | string[]; // 선수 번호 (선택사항)
   matchId: string;
+  sortTime: number;
 }
 
 export interface PlayerStats {
@@ -78,6 +81,40 @@ const getMomRecordSortValue = (matchDate: string) => {
   }
 
   return new Date(year, month - 1, day).getTime();
+};
+
+const getRawMatchSortTime = (matchDate: unknown) => {
+  if (matchDate instanceof Date) {
+    return matchDate.getTime();
+  }
+
+  if (typeof matchDate !== "string") {
+    return 0;
+  }
+
+  const normalized = matchDate.trim();
+  if (!normalized) return 0;
+
+  if (normalized.includes("T")) {
+    const date = new Date(normalized);
+    return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+  }
+
+  if (normalized.includes("-")) {
+    const [year, month, day] = normalized
+      .split("-")
+      .map((value) => Number(value));
+    if ([year, month, day].some((value) => Number.isNaN(value))) {
+      return 0;
+    }
+    return new Date(year, month - 1, day).getTime();
+  }
+
+  if (normalized.includes(".")) {
+    return getMomRecordSortValue(normalized);
+  }
+
+  return 0;
 };
 
 const getDisplayScorers = (match: CompletedMatch): DisplayScorer[] => {
@@ -774,12 +811,16 @@ function UpcomingMatchCard({ match }: UpcomingMatchCardProps) {
 
 interface MainScreenProps {
   onNavigateToMatches: () => void;
+  onNavigateToTeamMembers?: () => void;
+  canManageTeamMembers?: boolean;
   cachedData?: any; // ✅ 캐시 데이터 추가
   isLoadingCache?: boolean; // ✅ 로딩 상태 추가
 }
 
 export default function MainScreen({
   onNavigateToMatches,
+  onNavigateToTeamMembers,
+  canManageTeamMembers = false,
   cachedData,
   isLoadingCache,
 }: MainScreenProps) {
@@ -1173,10 +1214,64 @@ export default function MainScreen({
   );
 
   // ✅ Supabase MOM 데이터 사용
+  const localPlayers = getPlayers();
+  const localParticipants = getParticipants();
+  const localScores = getScores();
+
+  const findPlayerDisplay = (playerId: string) => {
+    const localPlayer = localPlayers.find(
+      (player) => String(player.id) === String(playerId),
+    );
+    if (localPlayer) {
+      return {
+        name: localPlayer.name,
+        number: localPlayer.number || "?",
+      };
+    }
+
+    const participant = localParticipants.find(
+      (item) => String(item.playerId) === String(playerId),
+    );
+    if (participant?.playerName) {
+      return {
+        name: participant.playerName,
+        number:
+          participant.playerNumber &&
+          participant.playerNumber !== "GUEST"
+            ? participant.playerNumber
+            : "?",
+      };
+    }
+
+    const score = localScores.find(
+      (item) => String(item.playerId) === String(playerId),
+    );
+    if (score?.playerName) {
+      return {
+        name: score.playerName,
+        number:
+          score.playerNumber && score.playerNumber !== "GUEST"
+            ? score.playerNumber
+            : "?",
+      };
+    }
+
+    return null;
+  };
+
   const momRecords: MOMRecord[] = remoteMOMs.map((mom: any) => {
+    const matchId = mom["matchId"] || mom["경기ID"];
+    const linkedMatch =
+      remoteRegisteredMatches.find((match: any) => match.id === matchId) ||
+      allLocalMatches.find((match: any) => match.id === matchId);
+
     // 날짜 형식 변환: YYYY.MM.DD 또는 YYYY-MM-DD -> YY.MM.DD
     let formattedDate =
-      mom["matchDate"] || mom["경기날짜"] || "";
+      linkedMatch?.matchDate ||
+      mom["matchDate"] ||
+      mom["경기날짜"] ||
+      "";
+    const sortTime = getRawMatchSortTime(formattedDate);
 
     // Date 객체인 경우 처리
     if (formattedDate instanceof Date) {
@@ -1227,17 +1322,14 @@ export default function MainScreen({
       : [playerIds];
 
     // 선수 이름과 번호 배열 생성
-    const allPlayers = getPlayers();
     const playerNames: string[] = [];
     const playerNumbers: string[] = [];
 
     playerIdArray.forEach((playerId: string) => {
-      const player = allPlayers.find(
-        (p) => String(p.id) === String(playerId),
-      );
-      if (player) {
-        playerNames.push(player.name);
-        playerNumbers.push(player.number);
+      const playerDisplay = findPlayerDisplay(playerId);
+      if (playerDisplay) {
+        playerNames.push(playerDisplay.name);
+        playerNumbers.push(playerDisplay.number);
       }
     });
 
@@ -1259,17 +1351,16 @@ export default function MainScreen({
         playerNumbers.length > 1
           ? playerNumbers
           : playerNumbers[0] || "?",
-      matchId: mom["matchId"] || mom["경기ID"],
+      matchId,
+      sortTime,
     };
   });
   const sortedMomRecords = [...momRecords].sort(
-    (a, b) =>
-      getMomRecordSortValue(b.matchDate) -
-      getMomRecordSortValue(a.matchDate),
+    (a, b) => b.sortTime - a.sortTime,
   );
 
   // 실제 선수 통계 데이터 변환 (기존 UI 형식에 맞춤)
-  const allPlayers = getPlayers(); // LocalStorage에서 33명 전체 선수 데이터 가져오기
+  const allPlayers = localPlayers; // LocalStorage에서 최신 선수 데이터 가져오기
 
   // ✅ Supabase Scores & Participants 데이터를 기반으로 리더보드 생성!
   const playerStats: PlayerStats[] = allPlayers.map(
@@ -1291,8 +1382,8 @@ export default function MainScreen({
           remoteScores && remoteScores.length > 0
             ? remoteScores.filter(
                 (score: any) =>
-                  score["playerName"] === player.name ||
-                  score["이름"] === player.name,
+                  String(score["playerId"] || score["선수ID"] || "") ===
+                  String(player.id),
               )
             : [];
         console.log(
@@ -1314,8 +1405,11 @@ export default function MainScreen({
           const playerParticipations =
             remoteParticipants.filter(
               (participant: any) =>
-                participant["playerName"] === player.name ||
-                participant["이름"] === player.name,
+                String(
+                  participant["playerId"] ||
+                    participant["선수ID"] ||
+                    "",
+                ) === String(player.id),
             );
           // 중복 제거를 위해 matchId를 Set으로 관리
           const uniqueMatches = new Set(
@@ -1658,7 +1752,7 @@ export default function MainScreen({
         <div className="content-stretch flex flex-col gap-[4px] items-start justify-center relative shrink-0 w-full">
           <div className="h-[40px] relative shrink-0 w-full">
             <div className="flex flex-row items-center size-full">
-              <div className="content-stretch flex items-center px-[20px] relative size-full">
+              <div className="content-stretch flex items-center justify-between px-[20px] relative size-full w-full">
                 <p
                   className="font-bold leading-[normal] not-italic relative shrink-0 text-[#1a1a1c] text-[20px]"
                   style={{
@@ -1667,6 +1761,27 @@ export default function MainScreen({
                 >
                   팀원 순위
                 </p>
+                {canManageTeamMembers ? (
+                  <button
+                    className="relative shrink-0 rounded-[58px] px-[12px] py-[8px] text-[#1a1a1c]"
+                    onClick={onNavigateToTeamMembers}
+                    style={{
+                      backgroundColor: "#ffffff",
+                      border: "1px solid #1a1a1c",
+                    }}
+                    type="button"
+                  >
+                    <p
+                      className="relative shrink-0 whitespace-nowrap text-left text-[14px] leading-[normal] not-italic"
+                      style={{
+                        fontFamily: "var(--font-paperlogy)",
+                        fontWeight: 500,
+                      }}
+                    >
+                      팀원 관리
+                    </p>
+                  </button>
+                ) : null}
               </div>
             </div>
           </div>

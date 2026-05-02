@@ -265,6 +265,65 @@ export const replaceGoalEventsForMatchInSupabase = async (
   if (insertError) throw insertError;
 };
 
+export const upsertScoresInSupabase = async (
+  scores: Array<Score & { playerNumber?: string; isOpponentGoal?: boolean }>,
+): Promise<void> => {
+  if (scores.length === 0) return;
+
+  const client = requireSupabase();
+  const { error } = await client
+    .from("scores")
+    .upsert(scores.map(toScoreRow), { onConflict: "id" });
+
+  if (error) throw error;
+};
+
+export const upsertParticipantsInSupabase = async (
+  participants: Participant[],
+): Promise<void> => {
+  if (participants.length === 0) return;
+
+  const client = requireSupabase();
+  const { error } = await client
+    .from("participants")
+    .upsert(participants.map(toParticipantRow), { onConflict: "id" });
+
+  if (error) throw error;
+};
+
+export const upsertGoalEventsInSupabase = async (
+  goalEvents: GoalEvent[],
+): Promise<void> => {
+  if (goalEvents.length === 0) return;
+
+  const client = requireSupabase();
+  const { error } = await client
+    .from("goal_events")
+    .upsert(goalEvents.map(toGoalEventRow), { onConflict: "id" });
+
+  if (error) throw error;
+};
+
+export const upsertMomsInSupabase = async (
+  moms: MOM[],
+): Promise<void> => {
+  if (moms.length === 0) return;
+
+  const client = requireSupabase();
+  const payload = moms.map((mom) => ({
+    id: mom.id,
+    match_id: mom.matchId,
+    player_ids: mom.playerIds,
+    created_at: mom.createdAt,
+  }));
+
+  const { error } = await client
+    .from("moms")
+    .upsert(payload, { onConflict: "id" });
+
+  if (error) throw error;
+};
+
 export const saveMomToSupabase = async (
   matchId: string,
   playerIds: string[],

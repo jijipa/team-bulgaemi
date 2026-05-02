@@ -28,6 +28,15 @@ const normalizeChoice = (value) => {
   return null;
 };
 
+const killChild = (child, signal = "SIGTERM") => {
+  if (!child || child.killed) return;
+  try {
+    child.kill(signal);
+  } catch {
+    // Ignore shutdown race conditions from already-exited children.
+  }
+};
+
 const startDevServer = (choice) => {
   const selected = teamModes[choice];
 
@@ -39,6 +48,23 @@ const startDevServer = (choice) => {
 
   console.log(`\n${selected.label} 개발 서버를 시작합니다.`);
   console.log(`주소: http://127.0.0.1:${selected.port}\n`);
+
+  const tailwindWatcher = spawn(
+    "npx",
+    [
+      "@tailwindcss/cli",
+      "-i",
+      "./src/styles/utilities-source.css",
+      "-o",
+      "./src/styles/generated-utilities.css",
+      "--minify",
+      "--watch",
+    ],
+    {
+      stdio: "inherit",
+      shell: process.platform === "win32",
+    },
+  );
 
   const child = spawn(
     "npx",
@@ -57,7 +83,31 @@ const startDevServer = (choice) => {
     },
   );
 
+  const shutdown = (signal) => {
+    killChild(tailwindWatcher, signal);
+    killChild(child, signal);
+  };
+
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("exit", () => shutdown("SIGTERM"));
+
+  tailwindWatcher.on("exit", (code, signal) => {
+    if (signal) {
+      killChild(child, signal);
+      process.kill(process.pid, signal);
+      return;
+    }
+
+    if ((code ?? 0) !== 0) {
+      killChild(child);
+      process.exit(code ?? 1);
+    }
+  });
+
   child.on("exit", (code, signal) => {
+    killChild(tailwindWatcher);
+
     if (signal) {
       process.kill(process.pid, signal);
       return;

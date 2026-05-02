@@ -60,6 +60,13 @@ const sanitizeSlug = (value: string | undefined, fallback: string) => {
   return sanitized || fallback;
 };
 
+const sanitizeColor = (value: string | undefined, fallback: string) => {
+  const trimmed = value?.trim();
+  if (!trimmed) return fallback;
+
+  return trimmed.replace(/^['"]+|['"]+$/g, "") || fallback;
+};
+
 const parsePlayers = (raw: string | undefined): TeamPlayer[] => {
   if (!raw?.trim()) return defaultPlayers;
 
@@ -127,29 +134,45 @@ export const teamConfig = {
     import.meta.env.VITE_EDIT_ACCESS_QUERY_PARAM?.trim() ||
     "edit",
   playerJerseySelectedColor:
-    import.meta.env.VITE_PLAYER_JERSEY_SELECTED_COLOR?.trim() ||
-    "#242B35",
+    sanitizeColor(
+      import.meta.env.VITE_PLAYER_JERSEY_SELECTED_COLOR,
+      "#242B35",
+    ),
   playerJerseyUnselectedColor:
-    import.meta.env.VITE_PLAYER_JERSEY_UNSELECTED_COLOR?.trim() ||
-    "#CECECE",
+    sanitizeColor(
+      import.meta.env.VITE_PLAYER_JERSEY_UNSELECTED_COLOR,
+      "#CECECE",
+    ),
   playerNumberSelectedColor:
-    import.meta.env.VITE_PLAYER_NUMBER_SELECTED_COLOR?.trim() ||
-    "#F2F2F2",
+    sanitizeColor(
+      import.meta.env.VITE_PLAYER_NUMBER_SELECTED_COLOR,
+      "#F2F2F2",
+    ),
   playerNumberUnselectedColor:
-    import.meta.env.VITE_PLAYER_NUMBER_UNSELECTED_COLOR?.trim() ||
-    "#6E7783",
+    sanitizeColor(
+      import.meta.env.VITE_PLAYER_NUMBER_UNSELECTED_COLOR,
+      "#6E7783",
+    ),
   playerSelectionCheckColor:
-    import.meta.env.VITE_PLAYER_SELECTION_CHECK_COLOR?.trim() ||
-    "#242B35",
+    sanitizeColor(
+      import.meta.env.VITE_PLAYER_SELECTION_CHECK_COLOR,
+      "#242B35",
+    ),
   leaderboardJerseyPrimaryColor:
-    import.meta.env.VITE_LEADERBOARD_JERSEY_PRIMARY_COLOR?.trim() ||
-    "#E24444",
+    sanitizeColor(
+      import.meta.env.VITE_LEADERBOARD_JERSEY_PRIMARY_COLOR,
+      "#E24444",
+    ),
   leaderboardJerseySecondaryColor:
-    import.meta.env.VITE_LEADERBOARD_JERSEY_SECONDARY_COLOR?.trim() ||
-    "#283135",
+    sanitizeColor(
+      import.meta.env.VITE_LEADERBOARD_JERSEY_SECONDARY_COLOR,
+      "#283135",
+    ),
   leaderboardJerseyNumberColor:
-    import.meta.env.VITE_LEADERBOARD_JERSEY_NUMBER_COLOR?.trim() ||
-    "#283135",
+    sanitizeColor(
+      import.meta.env.VITE_LEADERBOARD_JERSEY_NUMBER_COLOR,
+      "#283135",
+    ),
   players: parsePlayers(import.meta.env.VITE_TEAM_PLAYERS),
 } as const;
 

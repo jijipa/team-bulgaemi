@@ -124,17 +124,22 @@ export default function MatchRegistrationStep2({ onNext, onBack, onClose }: Matc
     const startingDayOfWeek = firstDay.getDay();
 
     const days: (number | null)[] = [];
-    
+
     // 이전 달의 빈 칸
     for (let i = 0; i < startingDayOfWeek; i++) {
       days.push(null);
     }
-    
+
     // 이번 달의 날짜
     for (let i = 1; i <= daysInMonth; i++) {
       days.push(i);
     }
-    
+
+    // 마지막 주의 빈 칸까지 채워서 항상 7열 정렬 유지
+    while (days.length % 7 !== 0) {
+      days.push(null);
+    }
+
     return days;
   };
 
@@ -290,24 +295,31 @@ export default function MatchRegistrationStep2({ onNext, onBack, onClose }: Matc
                   </div>
                   <div className="grid grid-cols-7 gap-[4px] px-[12px] py-[8px]">
                     {["일", "월", "화", "수", "목", "금", "토"].map((day) => (
-                      <p key={day} className="leading-[normal] not-italic relative shrink-0 text-[14px] tracking-[-0.28px]" style={{ fontFamily: 'var(--font-pretendard)', fontWeight: 500 }}>
-                        {day}
-                      </p>
-                    ))}
-                  </div>
-                  <div className="grid grid-cols-7 gap-[4px] px-[12px] py-[8px]">
-                    {getDaysInMonth(currentMonth).map((day) => (
-                      <button
-                        key={day}
-                        onClick={() => day && handleDateSelect(day)}
-                        className={`h-[32px] relative rounded-[5px] w-[32px] border ${
-                          day && isSelectedDate(day) ? "border-[#242b35] bg-[#242b35] text-white" : "border-[#e1e4ec]"
-                        }`}
-                      >
-                        <p className="leading-[normal] not-italic relative shrink-0 text-[14px] tracking-[-0.28px]" style={{ fontFamily: 'var(--font-pretendard)', fontWeight: 500 }}>
+                      <div key={day} className="flex items-center justify-center h-[24px]">
+                        <p className="leading-[normal] not-italic text-[14px] tracking-[-0.28px]" style={{ fontFamily: 'var(--font-pretendard)', fontWeight: 500 }}>
                           {day}
                         </p>
-                      </button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-7 gap-y-[8px] px-[12px] py-[8px]">
+                    {getDaysInMonth(currentMonth).map((day, index) => (
+                      <div key={day ? `day-${day}` : `empty-${index}`} className="flex items-center justify-center h-[32px]">
+                        {day ? (
+                          <button
+                            onClick={() => handleDateSelect(day)}
+                            className={`flex h-[32px] w-[32px] items-center justify-center rounded-[5px] border ${
+                              isSelectedDate(day) ? "border-[#242b35] bg-[#242b35] text-white" : "border-[#e1e4ec]"
+                            }`}
+                          >
+                            <p className="leading-[normal] not-italic text-[14px] tracking-[-0.28px]" style={{ fontFamily: 'var(--font-pretendard)', fontWeight: 500 }}>
+                              {day}
+                            </p>
+                          </button>
+                        ) : (
+                          <div className="h-[32px] w-[32px]" aria-hidden="true" />
+                        )}
+                      </div>
                     ))}
                   </div>
                 </div>

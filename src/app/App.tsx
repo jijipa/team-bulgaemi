@@ -4,6 +4,7 @@ import MercenaryModal from "./components/MercenaryModal";
 import MercenaryManagement from "./components/MercenaryManagement";
 import ScoreTracking from "./components/ScoreTracking";
 import MainScreen from "./components/MainScreen";
+import TeamMemberManagement from "./components/TeamMemberManagement";
 import MatchListScreen, {
   MatchListItem,
 } from "./components/MatchListScreen";
@@ -12,7 +13,10 @@ import { Toaster } from "sonner";
 import { isSupabaseConfigured } from "./lib/supabase";
 import { fetchMatchesFromSupabase } from "./services/supabaseMatches";
 import {
+  exportAllData,
+  getPlayers,
   getParticipants,
+  importAllData,
   saveGoalEvents,
   saveMOMs,
   saveMatches,
@@ -23,8 +27,17 @@ import {
 import {
   fetchAppDataFromSupabase,
   replaceParticipantsForMatchInSupabase,
+  upsertGoalEventsInSupabase,
+  upsertMomsInSupabase,
+  upsertParticipantsInSupabase,
+  upsertScoresInSupabase,
 } from "./services/supabaseAppData";
 import { teamConfig } from "./config/team";
+import {
+  createTeamMemberData,
+  deleteTeamMemberData,
+  updateTeamMemberData,
+} from "./utils/teamMembers";
 
 interface Player {
   id: string;
@@ -40,6 +53,7 @@ interface Mercenary {
 type AppRoute =
   | { name: "home" }
   | { name: "matches" }
+  | { name: "teamMembers" }
   | { name: "newMatch" }
   | { name: "participants"; matchId: string }
   | { name: "score"; matchId: string };
@@ -77,6 +91,7 @@ const parseRoute = (pathname: string): AppRoute => {
 
   if (normalizedPath === "/") return { name: "home" };
   if (normalizedPath === "/matches") return { name: "matches" };
+  if (normalizedPath === "/team-members") return { name: "teamMembers" };
   if (normalizedPath === "/matches/new") return { name: "newMatch" };
 
   const participantsMatch = normalizedPath.match(/^\/matches\/([^/]+)\/participants$/);
@@ -98,6 +113,8 @@ const buildPath = (route: AppRoute): string => {
       return "/";
     case "matches":
       return "/matches";
+    case "teamMembers":
+      return "/team-members";
     case "newMatch":
       return "/matches/new";
     case "participants":
@@ -106,8 +123,6 @@ const buildPath = (route: AppRoute): string => {
       return `/matches/${encodeURIComponent(route.matchId)}/score`;
   }
 };
-
-const players: Player[] = teamConfig.players;
 
 interface PlayerCardProps {
   player: Player;
@@ -215,6 +230,12 @@ export default function App() {
   const [hasEditAccess, setHasEditAccess] = useState(() =>
     getInitialEditAccess(isLocalhost),
   );
+  const [players, setPlayers] = useState<Player[]>(() => {
+    const storedPlayers = getPlayers();
+    return storedPlayers.length > 0
+      ? storedPlayers
+      : teamConfig.players;
+  });
   const [selectedPlayers, setSelectedPlayers] = useState<
     Set<string>
   >(new Set());
@@ -363,16 +384,10 @@ export default function App() {
     }
   }, [route, isLoadingCache]);
 
-  // 🔄 앱 초기화: 선수 데이터를 LocalStorage에 저장
+  // 🔄 선수 데이터 초기화 및 유지
   useEffect(() => {
-    // ✅ 항상 최신 선수 목록으로 업데이트
-    console.log("📦 선수 데이터 업데이트 중...");
     savePlayers(players);
-    console.log(
-      "✅ 선수 데이터 업데이트 완료:",
-      players.length + "명",
-    );
-  }, []);
+  }, [players]);
 
   // 🔄 앱 시작 시 Supabase에서 매치 데이터 로드
   useEffect(() => {
@@ -553,6 +568,99 @@ export default function App() {
     return true;
   };
 
+  const toSnapshotData = () => {
+    const snapshot = exportAllData();
+    return {
+      matches: snapshot.matches,
+      scores: snapshot.scores,
+      players: snapshot.players,
+      participants: snapshot.participants,
+      mercenaries: snapshot.mercenaries,
+      moms: snapshot.moms,
+      goalEvents: snapshot.goalEvents || [],
+    };
+  };
+
+  const syncSnapshotToCache = (data: ReturnType<typeof toSnapshotData>) => {
+    setCachedGoogleData((prev: any) => ({
+      ...(prev || {}),
+      matches: data.matches,
+      scores: data.scores,
+      participants: data.participants,
+      moms: data.moms,
+      goalEvents: data.goalEvents,
+      timestamp: Date.now(),
+    }));
+  };
+
+  const syncTeamMemberRelatedDataToSupabase = async (
+    data: ReturnType<typeof toSnapshotData>,
+  ) => {
+    if (!isSupabaseConfigured) {
+      return;
+    }
+
+    await Promise.all([
+      upsertScoresInSupabase(data.scores),
+      upsertParticipantsInSupabase(data.participants),
+      upsertGoalEventsInSupabase(data.goalEvents),
+      upsertMomsInSupabase(data.moms),
+    ]);
+  };
+
+  const applyTeamMemberMutation = async (
+    buildNextData: (
+      currentData: ReturnType<typeof toSnapshotData>,
+    ) => ReturnType<typeof toSnapshotData>,
+    options?: { syncRemote?: boolean },
+  ) => {
+    const currentData = toSnapshotData();
+    const nextData = buildNextData(currentData);
+
+    importAllData(nextData);
+    setPlayers(nextData.players as Player[]);
+    syncSnapshotToCache(nextData);
+
+    try {
+      if (options?.syncRemote) {
+        await syncTeamMemberRelatedDataToSupabase(nextData);
+      }
+    } catch (error) {
+      importAllData(currentData);
+      setPlayers(currentData.players as Player[]);
+      syncSnapshotToCache(currentData);
+      throw error;
+    }
+  };
+
+  const handleAddTeamMember = async (input: {
+    name: string;
+    number: string;
+  }) => {
+    await applyTeamMemberMutation(
+      (currentData) => createTeamMemberData(currentData, input),
+      { syncRemote: false },
+    );
+  };
+
+  const handleUpdateTeamMember = async (
+    playerId: string,
+    input: { name: string; number: string },
+  ) => {
+    await applyTeamMemberMutation(
+      (currentData) =>
+        updateTeamMemberData(currentData, playerId, input),
+      { syncRemote: true },
+    );
+  };
+
+  const handleDeleteTeamMember = async (playerId: string) => {
+    await applyTeamMemberMutation(
+      (currentData) => deleteTeamMemberData(currentData, playerId),
+      { syncRemote: true },
+    );
+  };
+
   const handleAddMatch = () => {
     if (!hasEditAccess) return;
     navigateTo({ name: "newMatch" });
@@ -684,6 +792,7 @@ export default function App() {
   };
 
   const isProtectedRoute =
+    route.name === "teamMembers" ||
     route.name === "newMatch" ||
     route.name === "participants" ||
     route.name === "score";
@@ -947,9 +1056,21 @@ export default function App() {
           onComplete={handleMatchRegistrationComplete}
           onCancel={() => navigateTo({ name: "matches" })}
         />
+      ) : route.name === "teamMembers" ? (
+        <TeamMemberManagement
+          onAddMember={handleAddTeamMember}
+          onBack={() => navigateTo({ name: "home" })}
+          onDeleteMember={handleDeleteTeamMember}
+          onUpdateMember={handleUpdateTeamMember}
+          players={players}
+        />
       ) : (
         <MainScreen
           onNavigateToMatches={() => navigateTo({ name: "matches" })}
+          onNavigateToTeamMembers={() =>
+            navigateTo({ name: "teamMembers" })
+          }
+          canManageTeamMembers={hasEditAccess}
           cachedData={cachedGoogleData} // ✅ 캐시 데이터 전달
           isLoadingCache={isLoadingCache} // ✅ 로딩 상태 전달
         />
