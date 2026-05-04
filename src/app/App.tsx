@@ -4,11 +4,16 @@ import MercenaryModal from "./components/MercenaryModal";
 import MercenaryManagement from "./components/MercenaryManagement";
 import ScoreTracking from "./components/ScoreTracking";
 import MainScreen from "./components/MainScreen";
+import MatchCardScreen from "./components/MatchCardScreen";
 import TeamMemberManagement from "./components/TeamMemberManagement";
 import MatchListScreen, {
   MatchListItem,
 } from "./components/MatchListScreen";
 import MatchRegistration from "./components/MatchRegistration";
+import {
+  JjfcMatchResultCard,
+  jjfcMatchResultCardSampleData,
+} from "./components/JjfcMatchResultCard";
 import { Toaster } from "sonner";
 import { isSupabaseConfigured } from "./lib/supabase";
 import { fetchMatchesFromSupabase } from "./services/supabaseMatches";
@@ -56,7 +61,9 @@ type AppRoute =
   | { name: "teamMembers" }
   | { name: "newMatch" }
   | { name: "participants"; matchId: string }
-  | { name: "score"; matchId: string };
+  | { name: "score"; matchId: string }
+  | { name: "matchCard" }
+  | { name: "resultCardPreview" };
 
 const getEditAccessSessionKey = () =>
   `${teamConfig.storageNamespace}:edit-access-granted`;
@@ -88,11 +95,14 @@ const getInitialEditAccess = (isLocalhost: boolean) => {
 
 const parseRoute = (pathname: string): AppRoute => {
   const normalizedPath = pathname.replace(/\/+$/, "") || "/";
+  const isJjfcRouteEnabled = teamConfig.slug === "jjfc";
 
   if (normalizedPath === "/") return { name: "home" };
   if (normalizedPath === "/matches") return { name: "matches" };
   if (normalizedPath === "/team-members") return { name: "teamMembers" };
   if (normalizedPath === "/matches/new") return { name: "newMatch" };
+  if (isJjfcRouteEnabled && normalizedPath === "/matchcard") return { name: "matchCard" };
+  if (isJjfcRouteEnabled && normalizedPath === "/result-card-preview") return { name: "resultCardPreview" };
 
   const participantsMatch = normalizedPath.match(/^\/matches\/([^/]+)\/participants$/);
   if (participantsMatch) {
@@ -121,6 +131,10 @@ const buildPath = (route: AppRoute): string => {
       return `/matches/${encodeURIComponent(route.matchId)}/participants`;
     case "score":
       return `/matches/${encodeURIComponent(route.matchId)}/score`;
+    case "matchCard":
+      return "/matchcard";
+    case "resultCardPreview":
+      return "/result-card-preview";
   }
 };
 
@@ -812,7 +826,16 @@ export default function App() {
           {teamConfig.name} local
         </div>
       ) : null}
-      {isScoreRoute ? (
+      {route.name === "resultCardPreview" ? (
+        <div className="flex min-h-full w-full items-start justify-center bg-[#f5f5f5] p-[24px]">
+          <JjfcMatchResultCard data={jjfcMatchResultCardSampleData} />
+        </div>
+      ) : route.name === "matchCard" ? (
+        <MatchCardScreen
+          cachedData={cachedGoogleData}
+          isLoadingCache={isLoadingCache}
+        />
+      ) : isScoreRoute ? (
         <ScoreTracking
           selectedPlayers={players.filter((p) =>
             selectedPlayers.has(p.id),
