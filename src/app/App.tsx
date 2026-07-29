@@ -607,14 +607,14 @@ export default function App() {
       },
     );
 
+    // ✅ 참가자 레코드에 이미 playerId가 저장되어 있으므로 이름으로 다시
+    // 찾지 않고 그대로 사용한다. (동명이인이 있으면 이름 재검색 시 한쪽으로
+    // 뭉개져서 다른 한쪽이 "참여 안 됨"처럼 보이는 문제가 있었음)
     const selectedPlayerIds = new Set<string>();
     regularPlayers.forEach((p: any) => {
-      const playerName = p["이름"] || p["playerName"];
-      const foundPlayer = players.find(
-        (player) => player.name === playerName,
-      );
-      if (foundPlayer) {
-        selectedPlayerIds.add(foundPlayer.id);
+      const playerId = String(p["playerId"] || p["선수ID"] || "");
+      if (playerId) {
+        selectedPlayerIds.add(playerId);
       }
     });
 
