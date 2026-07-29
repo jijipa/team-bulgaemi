@@ -53,8 +53,8 @@ interface GoalRecord {
   id: string;
   quarter: number;
   goalType?: GoalType;
-  scorer: { name: string; isMercenary: boolean };
-  assist: { name: string; isMercenary: boolean } | null;
+  scorer: { id: string; name: string; isMercenary: boolean };
+  assist: { id: string; name: string; isMercenary: boolean } | null;
   isOpponentGoal: boolean;
 }
 
@@ -148,13 +148,13 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
     // 이전 용병 목록 업데이트
     prevMercenariesRef.current = [...mercenaries];
 
-    // 현재 선택된 선수 이름 목록
-    const selectedPlayerNames = new Set(selectedPlayers.map(p => p.name));
-    const currentMercenaryNames = new Set(mercenaries.map(m => m.name));
-    
+    // 현재 선택된 선수 id 목록 (동명이인 구분을 위해 이름 대신 id로 비교)
+    const selectedPlayerIds = new Set(selectedPlayers.map(p => p.id));
+    const currentMercenaryIds = new Set(mercenaries.map(m => m.id));
+
     console.log("📋 현재 상태:", {
-      선수: Array.from(selectedPlayerNames),
-      용병: Array.from(currentMercenaryNames),
+      선수: Array.from(selectedPlayerIds),
+      용병: Array.from(currentMercenaryIds),
       득점기록: goalRecords.length
     });
 
@@ -169,17 +169,17 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
 
         // 득점자 확인
         if (record.scorer.isMercenary) {
-          scorerExists = currentMercenaryNames.has(record.scorer.name);
+          scorerExists = currentMercenaryIds.has(record.scorer.id);
         } else {
-          scorerExists = selectedPlayerNames.has(record.scorer.name);
+          scorerExists = selectedPlayerIds.has(record.scorer.id);
         }
 
-        // 도���자 확인
+        // 도움자 확인
         if (record.assist) {
           if (record.assist.isMercenary) {
-            assistExists = currentMercenaryNames.has(record.assist.name);
+            assistExists = currentMercenaryIds.has(record.assist.id);
           } else {
-            assistExists = selectedPlayerNames.has(record.assist.name);
+            assistExists = selectedPlayerIds.has(record.assist.id);
           }
         }
 
@@ -244,16 +244,28 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
     setIsLoadingData(true);
     try {
       const matchEvents = getGoalEvents().filter((event) => event.matchId === matchId);
+      // ✅ scorerId/assistId는 "mercenary_" 접두사가 붙어 저장되므로, GoalRecord에서는
+      // 원본 id(접두사 제거)로 되돌려서 selectedPlayers/mercenaries와 id로 비교 가능하게 함
+      const stripMercenaryPrefix = (id: string) =>
+        id.startsWith("mercenary_") ? id.slice("mercenary_".length) : id;
       const restoredGoalRecords: GoalRecord[] = matchEvents.map((event) => ({
         id: event.id,
         quarter: event.quarter,
         goalType: event.goalType,
         scorer: {
+          id: event.isOpponentGoal
+            ? "opponent"
+            : event.scorerIsMercenary
+              ? stripMercenaryPrefix(event.scorerId)
+              : event.scorerId,
           name: event.isOpponentGoal ? "상대팀 득점" : event.scorerName,
           isMercenary: event.scorerIsMercenary,
         },
         assist: event.assistName
           ? {
+              id: event.assistIsMercenary
+                ? stripMercenaryPrefix(event.assistId || "")
+                : event.assistId || "",
               name: event.assistName,
               isMercenary: event.assistIsMercenary,
             }
@@ -288,83 +300,6 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
     } finally {
       setIsLoadingData(false);
     }
-  };
-
-  // ✅ 제거된 선수/용병의 골/도움 기록 필터링 함수
-  const filterRemovedPlayersGoals = () => {
-    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    console.log("🔍 제거된 선수/용병 골 기록 필터링 시작...");
-    
-    const selectedPlayerNames = new Set(selectedPlayers.map(p => p.name));
-    const currentMercenaryNames = new Set(mercenaries.map(m => m.name));
-    
-    console.log("📋 현재 참가 인원:", {
-      선수: Array.from(selectedPlayerNames),
-      용병: Array.from(currentMercenaryNames),
-    });
-
-    // 골 기록 필터링
-    const filteredGoalRecords = goalRecords.filter(record => {
-      // 상대팀 골과 자책골은 유지
-      if (record.isOpponentGoal || record.scorer.name === "자책골") return true;
-
-      // 득점자 확인
-      const scorerExists = record.scorer.isMercenary
-        ? currentMercenaryNames.has(record.scorer.name)
-        : selectedPlayerNames.has(record.scorer.name);
-
-      if (!scorerExists) {
-        console.log(`❌ 득점자 제거됨: ${record.scorer.name} (${record.quarter}쿼터)`);
-        return false;
-      }
-
-      // 도움자 확인 (있는 경우만)
-      if (record.assist) {
-        const assistExists = record.assist.isMercenary
-          ? currentMercenaryNames.has(record.assist.name)
-          : selectedPlayerNames.has(record.assist.name);
-
-        if (!assistExists) {
-          console.log(`⚠️ 도움자 제거됨: ${record.assist.name} → 도움만 null로 변경`);
-          // 도움자만 제거 (골 기록은 유지)
-          record.assist = null;
-        }
-      }
-
-      return true;
-    });
-
-    // 변경 사항이 있으면 업데이트
-    if (filteredGoalRecords.length !== goalRecords.length || 
-        JSON.stringify(filteredGoalRecords) !== JSON.stringify(goalRecords)) {
-      
-      console.log("⚠️ 골 기록 변경 감지:", {
-        이전: goalRecords.length,
-        이후: filteredGoalRecords.length,
-        삭제됨: goalRecords.length - filteredGoalRecords.length
-      });
-
-      // 쿼터 스코어 재계산
-      const newQuarterScores = createEmptyQuarterScores(registeredQuarterCount);
-
-      filteredGoalRecords.forEach(record => {
-        if (record.isOpponentGoal) {
-          newQuarterScores[record.quarter - 1].opponent += 1;
-        } else {
-          newQuarterScores[record.quarter - 1].our += 1;
-        }
-      });
-
-      setGoalRecords(filteredGoalRecords);
-      setQuarterScores(newQuarterScores);
-
-      console.log("✅ 필터링된 골 기록:", filteredGoalRecords);
-      console.log("✅ 재계산된 쿼터 스코어:", newQuarterScores);
-    } else {
-      console.log("✅ 제거된 선수 없음 - 필터링 불필요");
-    }
-
-    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   };
 
   const totalScore = quarterScores.reduce(
@@ -408,7 +343,7 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
       const newGoal: GoalRecord = {
         id: Date.now().toString(),
         quarter: currentQuarter,
-        scorer: { name: "자책골", isMercenary: false },
+        scorer: { id: "0", name: "자책골", isMercenary: false },
         assist: null,
         isOpponentGoal: false,
       };
@@ -440,8 +375,12 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
     const newGoal: GoalRecord = {
       id: Date.now().toString(),
       quarter: currentQuarter,
-      scorer: { name: selectedScorer.player.name, isMercenary: selectedScorer.isMercenary },
-      assist: assist ? { name: assist.name, isMercenary } : null,
+      scorer: {
+        id: selectedScorer.player.id,
+        name: selectedScorer.player.name,
+        isMercenary: selectedScorer.isMercenary,
+      },
+      assist: assist ? { id: assist.id, name: assist.name, isMercenary } : null,
       isOpponentGoal: false,
     };
 
@@ -464,7 +403,7 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
     const newGoal: GoalRecord = {
       id: Date.now().toString(),
       quarter: currentQuarter,
-      scorer: { name: "상대팀 득점", isMercenary: false },
+      scorer: { id: "opponent", name: "상대팀 득점", isMercenary: false },
       assist: null,
       isOpponentGoal: true,
     };
@@ -512,35 +451,41 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
     setIsSaving(true);
     
     try {
-      // 각 선수별 골/도움 집계
-      const playerStats: { [name: string]: { goals: number; assists: number } } = {};
+      // 각 선수별 골/도움 집계 (동명이인 구분을 위해 이름 대신 id로 집계.
+      // 용병은 player.id와 겹칠 수 있으므로 Score.playerId와 동일하게 "mercenary_" 접두사로 구분)
+      const playerStats: { [playerKey: string]: { goals: number; assists: number } } = {};
+      const mercenaryKey = (id: string) => `mercenary_${id}`;
 
-      // 선수 이름으로 초기화 (일반 선수만)
       selectedPlayers.forEach((player) => {
-        playerStats[player.name] = { goals: 0, assists: 0 };
+        playerStats[player.id] = { goals: 0, assists: 0 };
       });
 
-      // ✅ 용병도 초기화
       mercenaries.forEach((merc) => {
-        playerStats[merc.name] = { goals: 0, assists: 0 };
+        playerStats[mercenaryKey(merc.id)] = { goals: 0, assists: 0 };
       });
 
       // 득점 기록을 순회하며 통계 집계
       goalRecords.forEach((record) => {
         // 상대팀 득점은 무시 (자책골은 별도 처리)
         if (record.isOpponentGoal) return;
-        
+
         // 자책골은 선수 통계에서 제외 (별도로 처리)
         if (record.scorer.name === "자책골") return;
 
-        // 득점 집계 (일반 선수 + 용병)
-        if (playerStats[record.scorer.name]) {
-          playerStats[record.scorer.name].goals += 1;
+        const scorerKey = record.scorer.isMercenary
+          ? mercenaryKey(record.scorer.id)
+          : record.scorer.id;
+        if (playerStats[scorerKey]) {
+          playerStats[scorerKey].goals += 1;
         }
 
-        // 도움 집계 (일반 선수 + 용병)
-        if (record.assist && playerStats[record.assist.name]) {
-          playerStats[record.assist.name].assists += 1;
+        if (record.assist) {
+          const assistKey = record.assist.isMercenary
+            ? mercenaryKey(record.assist.id)
+            : record.assist.id;
+          if (playerStats[assistKey]) {
+            playerStats[assistKey].assists += 1;
+          }
         }
       });
 
@@ -551,8 +496,8 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
         playerId: player.id,
         playerName: player.name,
         playerNumber: player.number,
-        goals: playerStats[player.name].goals,
-        assists: playerStats[player.name].assists,
+        goals: playerStats[player.id].goals,
+        assists: playerStats[player.id].assists,
         isMercenary: false,
       })));
 
@@ -560,11 +505,11 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
       const mercenaryScores: Score[] = mercenaries.map((merc) => ({
         id: `score_${matchId}_mercenary_${merc.id}`,
         matchId: matchId,
-        playerId: `mercenary_${merc.id}`,
+        playerId: mercenaryKey(merc.id),
         playerName: merc.name,
         playerNumber: "GUEST",
-        goals: playerStats[merc.name]?.goals || 0,
-        assists: playerStats[merc.name]?.assists || 0,
+        goals: playerStats[mercenaryKey(merc.id)]?.goals || 0,
+        assists: playerStats[mercenaryKey(merc.id)]?.assists || 0,
         isMercenary: true,
       }));
 
@@ -592,18 +537,20 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
           ...score,
           quarterData: quarterNumbers.map((quarter) => ({
             quarter,
-            goals: goalRecords.filter(
-              (record) =>
-                record.quarter === quarter &&
-                !record.isOpponentGoal &&
-                record.scorer.name === score.playerName
-            ).length,
-            assists: goalRecords.filter(
-              (record) =>
-                record.quarter === quarter &&
-                !record.isOpponentGoal &&
-                record.assist?.name === score.playerName
-            ).length,
+            goals: goalRecords.filter((record) => {
+              if (record.quarter !== quarter || record.isOpponentGoal) return false;
+              const scorerKey = record.scorer.isMercenary
+                ? mercenaryKey(record.scorer.id)
+                : record.scorer.id;
+              return scorerKey === score.playerId;
+            }).length,
+            assists: goalRecords.filter((record) => {
+              if (record.quarter !== quarter || record.isOpponentGoal || !record.assist) return false;
+              const assistKey = record.assist.isMercenary
+                ? mercenaryKey(record.assist.id)
+                : record.assist.id;
+              return assistKey === score.playerId;
+            }).length,
           })),
         }));
 
@@ -651,17 +598,20 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
 
       const allParticipants = [...participantData, ...mercenaryParticipants];
       const now = new Date().toISOString();
+      // ✅ record.scorer.id/record.assist.id는 선택 시점에 이미 확정된 값이므로
+      // 이름으로 다시 찾지 않고 그대로 사용 (동명이인이어도 정확한 선수로 귀속됨)
       const goalEvents: GoalEvent[] = goalRecords.map((record, index) => {
-        const scorerPlayer = selectedPlayers.find((player) => player.name === record.scorer.name);
-        const scorerMercenary = mercenaries.find((mercenary) => mercenary.name === record.scorer.name);
-        const assistPlayer = selectedPlayers.find((player) => player.name === record.assist?.name);
-        const assistMercenary = mercenaries.find((mercenary) => mercenary.name === record.assist?.name);
-
         const scorerId = record.isOpponentGoal
           ? "opponent"
-          : record.scorer.name === "자책골"
-            ? "0"
-            : scorerPlayer?.id || (scorerMercenary ? `mercenary_${scorerMercenary.id}` : record.scorer.name);
+          : record.scorer.isMercenary
+            ? mercenaryKey(record.scorer.id)
+            : record.scorer.id;
+
+        const assistId = !record.assist
+          ? null
+          : record.assist.isMercenary
+            ? mercenaryKey(record.assist.id)
+            : record.assist.id;
 
         const goalType: GoalType = record.isOpponentGoal
           ? "opponent_team"
@@ -679,7 +629,7 @@ export default function ScoreTracking({ selectedPlayers, mercenaries, matchId, i
           scorerId,
           scorerName: record.isOpponentGoal ? (opponentName || "상대팀") : record.scorer.name,
           scorerIsMercenary: record.scorer.isMercenary,
-          assistId: assistPlayer?.id || (assistMercenary ? `mercenary_${assistMercenary.id}` : null),
+          assistId,
           assistName: record.assist?.name || null,
           assistIsMercenary: Boolean(record.assist?.isMercenary),
           isOpponentGoal: record.isOpponentGoal,

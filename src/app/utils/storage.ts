@@ -105,18 +105,6 @@ export const getScores = (): Score[] => {
   return data ? JSON.parse(data) : [];
 };
 
-export const addScore = (score: Score): void => {
-  const scores = getScores();
-  scores.push(score);
-  saveScores(scores);
-};
-
-export const addScores = (newScores: Score[]): void => {
-  const scores = getScores();
-  scores.push(...newScores);
-  saveScores(scores);
-};
-
 export const getScoresByMatchId = (matchId: string): Score[] => {
   const scores = getScores();
   return scores.filter((s) => s.matchId === matchId);
@@ -131,12 +119,6 @@ export const saveGoalEvents = (goalEvents: GoalEvent[]): void => {
 export const getGoalEvents = (): GoalEvent[] => {
   const data = localStorage.getItem(STORAGE_KEYS.GOAL_EVENTS);
   return data ? JSON.parse(data) : [];
-};
-
-export const addGoalEvents = (newGoalEvents: GoalEvent[]): void => {
-  const goalEvents = getGoalEvents();
-  goalEvents.push(...newGoalEvents);
-  saveGoalEvents(goalEvents);
 };
 
 export const replaceGoalEventsByMatchId = (
@@ -158,21 +140,6 @@ export const getPlayers = (): Player[] => {
   return data ? JSON.parse(data) : [];
 };
 
-export const addPlayer = (player: Player): void => {
-  const players = getPlayers();
-  // 중복 체크 (이름으로)
-  const exists = players.some((p) => p.name === player.name);
-  if (!exists) {
-    players.push(player);
-    savePlayers(players);
-  }
-};
-
-export const getPlayerById = (playerId: string): Player | undefined => {
-  const players = getPlayers();
-  return players.find((p) => p.id === playerId);
-};
-
 // ============= 참가자 데이터 =============
 
 export const saveParticipants = (participants: Participant[]): void => {
@@ -182,17 +149,6 @@ export const saveParticipants = (participants: Participant[]): void => {
 export const getParticipants = (): Participant[] => {
   const data = localStorage.getItem(STORAGE_KEYS.PARTICIPANTS);
   return data ? JSON.parse(data) : [];
-};
-
-export const addParticipant = (participant: Participant): void => {
-  const participants = getParticipants();
-  participants.push(participant);
-  saveParticipants(participants);
-};
-
-export const getParticipantById = (participantId: string): Participant | undefined => {
-  const participants = getParticipants();
-  return participants.find((p) => p.id === participantId);
 };
 
 // ============= 고용병 데이터 =============
@@ -206,17 +162,6 @@ export const getMercenaries = (): Mercenary[] => {
   return data ? JSON.parse(data) : [];
 };
 
-export const addMercenary = (mercenary: Mercenary): void => {
-  const mercenaries = getMercenaries();
-  mercenaries.push(mercenary);
-  saveMercenaries(mercenaries);
-};
-
-export const getMercenaryById = (mercenaryId: string): Mercenary | undefined => {
-  const mercenaries = getMercenaries();
-  return mercenaries.find((m) => m.id === mercenaryId);
-};
-
 // ============= 매치 최고 선수 데이터 =============
 
 export const saveMOMs = (moms: MOM[]): void => {
@@ -228,17 +173,6 @@ export const getMOMs = (): MOM[] => {
   return data ? JSON.parse(data) : [];
 };
 
-export const addMOM = (mom: MOM): void => {
-  const moms = getMOMs();
-  moms.push(mom);
-  saveMOMs(moms);
-};
-
-export const getMOMById = (momId: string): MOM | undefined => {
-  const moms = getMOMs();
-  return moms.find((m) => m.id === momId);
-};
-
 // ============= 유틸리티 =============
 
 // 고유 ID 생성
@@ -246,17 +180,6 @@ export const generateId = (prefix: string): string => {
   const timestamp = Date.now();
   const random = Math.random().toString(36).substring(2, 9);
   return `${prefix}_${timestamp}_${random}`;
-};
-
-// 모든 데이터 삭제 (테스트용)
-export const clearAllData = (): void => {
-  localStorage.removeItem(STORAGE_KEYS.MATCHES);
-  localStorage.removeItem(STORAGE_KEYS.SCORES);
-  localStorage.removeItem(STORAGE_KEYS.PLAYERS);
-  localStorage.removeItem(STORAGE_KEYS.PARTICIPANTS);
-  localStorage.removeItem(STORAGE_KEYS.MERCENARIES);
-  localStorage.removeItem(STORAGE_KEYS.MOMS);
-  localStorage.removeItem(STORAGE_KEYS.GOAL_EVENTS);
 };
 
 // 모든 데이터 내보내기 (백업용)
@@ -271,23 +194,4 @@ export const exportAllData = () => {
     goalEvents: getGoalEvents(),
     exportedAt: new Date().toISOString(),
   };
-};
-
-// 데이터 가져오기 (복구용)
-export const importAllData = (data: {
-  matches: Match[];
-  scores: Score[];
-  players: Player[];
-  participants: Participant[];
-  mercenaries: Mercenary[];
-  moms: MOM[];
-  goalEvents?: GoalEvent[];
-}): void => {
-  saveMatches(data.matches);
-  saveScores(data.scores);
-  savePlayers(data.players);
-  saveParticipants(data.participants);
-  saveMercenaries(data.mercenaries);
-  saveMOMs(data.moms);
-  saveGoalEvents(data.goalEvents || []);
 };

@@ -10,6 +10,8 @@ import MatchListScreen, {
   MatchListItem,
 } from "./components/MatchListScreen";
 import MatchRegistration from "./components/MatchRegistration";
+import TmmboxGuide from "../components/tmmbox-guide-styled/TmmboxGuide";
+import type { SectionId as TmmboxGuideSectionId } from "../components/tmmbox-guide-styled/TmmboxGuide";
 import {
   JjfcMatchResultCard,
   jjfcMatchResultCardSampleData,
@@ -21,11 +23,10 @@ import {
   exportAllData,
   getPlayers,
   getParticipants,
-  importAllData,
   saveGoalEvents,
   saveMOMs,
   saveMatches,
-  savePlayers,
+  saveMercenaries,
   saveParticipants,
   saveScores,
 } from "./utils/storage";
@@ -37,6 +38,11 @@ import {
   upsertParticipantsInSupabase,
   upsertScoresInSupabase,
 } from "./services/supabaseAppData";
+import {
+  deletePlayerFromSupabase,
+  fetchPlayersFromSupabase,
+  upsertPlayersInSupabase,
+} from "./services/supabasePlayers";
 import { teamConfig } from "./config/team";
 import {
   createTeamMemberData,
@@ -63,7 +69,8 @@ type AppRoute =
   | { name: "participants"; matchId: string }
   | { name: "score"; matchId: string }
   | { name: "matchCard" }
-  | { name: "resultCardPreview" };
+  | { name: "resultCardPreview" }
+  | { name: "tmmboxGuide"; sectionId?: TmmboxGuideSectionId };
 
 const getEditAccessSessionKey = () =>
   `${teamConfig.storageNamespace}:edit-access-granted`;
@@ -103,6 +110,16 @@ const parseRoute = (pathname: string): AppRoute => {
   if (normalizedPath === "/matches/new") return { name: "newMatch" };
   if (isJjfcRouteEnabled && normalizedPath === "/matchcard") return { name: "matchCard" };
   if (isJjfcRouteEnabled && normalizedPath === "/result-card-preview") return { name: "resultCardPreview" };
+  if (normalizedPath === "/tmmbox/guide") return { name: "tmmboxGuide" };
+
+  const tmmboxGuideMatch = normalizedPath.match(/^\/tmmbox\/guide\/([^/]+)$/);
+  if (tmmboxGuideMatch) {
+    const sectionId = decodeURIComponent(tmmboxGuideMatch[1]);
+    if (["shopping", "arrive", "inspection", "storage", "shipping"].includes(sectionId)) {
+      return { name: "tmmboxGuide", sectionId: sectionId as TmmboxGuideSectionId };
+    }
+    return { name: "tmmboxGuide" };
+  }
 
   const participantsMatch = normalizedPath.match(/^\/matches\/([^/]+)\/participants$/);
   if (participantsMatch) {
@@ -135,6 +152,8 @@ const buildPath = (route: AppRoute): string => {
       return "/matchcard";
     case "resultCardPreview":
       return "/result-card-preview";
+    case "tmmboxGuide":
+      return route.sectionId ? `/tmmbox/guide/${route.sectionId}` : "/tmmbox/guide";
   }
 };
 
@@ -398,11 +417,6 @@ export default function App() {
     }
   }, [route, isLoadingCache]);
 
-  // 🔄 선수 데이터 초기화 및 유지
-  useEffect(() => {
-    savePlayers(players);
-  }, [players]);
-
   // 🔄 앱 시작 시 Supabase에서 매치 데이터 로드
   useEffect(() => {
     if (shouldRefetch) {
@@ -425,11 +439,14 @@ export default function App() {
 
       if (!isSupabaseConfigured) {
         console.warn("⚠️ Supabase 설정이 없어 원격 매치 로드를 건너뜁니다.");
+        const fallbackPlayers = teamConfig.players as Player[];
+        setPlayers(fallbackPlayers);
         setCachedGoogleData({
           matches: [],
           scores: [],
           stats: [],
           participants: [],
+          players: fallbackPlayers,
           moms: [],
           timestamp: Date.now(),
         });
@@ -439,11 +456,43 @@ export default function App() {
 
       const supabaseMatches = await fetchMatchesFromSupabase();
       const appData = await fetchAppDataFromSupabase(supabaseMatches);
+      let remotePlayers: Player[] = [];
+
+      try {
+        remotePlayers = await fetchPlayersFromSupabase();
+        if (remotePlayers.length === 0) {
+          const seedPlayers = teamConfig.players as Player[];
+          await upsertPlayersInSupabase(seedPlayers as Player[]);
+          remotePlayers = seedPlayers as Player[];
+          console.log("✅ Supabase 선수 명단 초기 저장 완료:", remotePlayers.length, "명");
+        } else {
+          const remotePlayerIds = new Set(remotePlayers.map((player) => String(player.id)));
+          const remotePlayerNames = new Set(remotePlayers.map((player) => player.name.trim()));
+          const missingDefaultPlayers = (teamConfig.players as Player[]).filter(
+            (player) =>
+              !remotePlayerIds.has(String(player.id)) &&
+              !remotePlayerNames.has(player.name.trim()),
+          );
+
+          if (missingDefaultPlayers.length > 0) {
+            await upsertPlayersInSupabase(missingDefaultPlayers);
+            remotePlayers = [...remotePlayers, ...missingDefaultPlayers];
+          }
+        }
+      } catch (error) {
+        console.warn(
+          "⚠️ Supabase 선수 명단 로드 실패, 로컬/기본 명단으로 대체합니다:",
+          error,
+        );
+        remotePlayers = teamConfig.players as Player[];
+      }
+
       saveMatches(appData.matches);
       saveScores(appData.scores);
       saveParticipants(appData.participants);
       saveMOMs(appData.moms);
       saveGoalEvents(appData.goalEvents);
+      setPlayers(remotePlayers);
       const loadedMatches: MatchListItem[] = supabaseMatches.map((match) => {
         const dateOnly = match.matchDate.split("T")[0];
         const [year, month, day] = dateOnly.split("-").map(Number);
@@ -479,6 +528,7 @@ export default function App() {
         scores: appData.scores,
         stats: [],
         participants: appData.participants,
+        players: remotePlayers,
         moms: appData.moms,
         goalEvents: appData.goalEvents,
         timestamp: Date.now(),
@@ -587,7 +637,7 @@ export default function App() {
     return {
       matches: snapshot.matches,
       scores: snapshot.scores,
-      players: snapshot.players,
+      players,
       participants: snapshot.participants,
       mercenaries: snapshot.mercenaries,
       moms: snapshot.moms,
@@ -600,11 +650,23 @@ export default function App() {
       ...(prev || {}),
       matches: data.matches,
       scores: data.scores,
+      players: data.players,
       participants: data.participants,
       moms: data.moms,
       goalEvents: data.goalEvents,
       timestamp: Date.now(),
     }));
+  };
+
+  const applySnapshotData = (data: ReturnType<typeof toSnapshotData>) => {
+    saveMatches(data.matches);
+    saveScores(data.scores);
+    saveParticipants(data.participants);
+    saveMercenaries(data.mercenaries);
+    saveMOMs(data.moms);
+    saveGoalEvents(data.goalEvents);
+    setPlayers(data.players as Player[]);
+    syncSnapshotToCache(data);
   };
 
   const syncTeamMemberRelatedDataToSupabase = async (
@@ -626,23 +688,53 @@ export default function App() {
     buildNextData: (
       currentData: ReturnType<typeof toSnapshotData>,
     ) => ReturnType<typeof toSnapshotData>,
-    options?: { syncRemote?: boolean },
+    options?: { deletedPlayerId?: string; syncRelated?: boolean },
   ) => {
-    const currentData = toSnapshotData();
-    const nextData = buildNextData(currentData);
+    const localData = toSnapshotData();
 
-    importAllData(nextData);
-    setPlayers(nextData.players as Player[]);
-    syncSnapshotToCache(nextData);
+    // ✅ scores/participants/goalEvents/moms를 함께 동기화해야 하는 경우,
+    // 이 브라우저의 로컬 캐시가 오래됐을 수 있으므로 Supabase 최신 데이터를
+    // 다시 받아온 뒤 그 위에 변경사항을 적용한다. (그렇지 않으면 다른 곳에서
+    // 이미 반영된 최신 득점 기록을 오래된 로컬 캐시로 덮어써버릴 수 있음)
+    let baseData = localData;
+    if (isSupabaseConfigured && options?.syncRelated) {
+      try {
+        const freshMatches = await fetchMatchesFromSupabase();
+        const freshAppData = await fetchAppDataFromSupabase(freshMatches);
+        baseData = {
+          ...localData,
+          matches: freshAppData.matches,
+          scores: freshAppData.scores,
+          participants: freshAppData.participants,
+          moms: freshAppData.moms,
+          goalEvents: freshAppData.goalEvents || [],
+        };
+      } catch (error) {
+        console.warn(
+          "⚠️ 최신 데이터 재조회 실패, 로컬 캐시로 진행합니다:",
+          error,
+        );
+      }
+    }
+
+    const nextData = buildNextData(baseData);
+
+    applySnapshotData(nextData);
 
     try {
-      if (options?.syncRemote) {
+      if (isSupabaseConfigured) {
+        if (options?.deletedPlayerId) {
+          await deletePlayerFromSupabase(options.deletedPlayerId);
+        } else {
+          await upsertPlayersInSupabase(nextData.players);
+        }
+      }
+
+      if (options?.syncRelated) {
         await syncTeamMemberRelatedDataToSupabase(nextData);
       }
     } catch (error) {
-      importAllData(currentData);
-      setPlayers(currentData.players as Player[]);
-      syncSnapshotToCache(currentData);
+      applySnapshotData(currentData);
       throw error;
     }
   };
@@ -653,7 +745,6 @@ export default function App() {
   }) => {
     await applyTeamMemberMutation(
       (currentData) => createTeamMemberData(currentData, input),
-      { syncRemote: false },
     );
   };
 
@@ -664,14 +755,14 @@ export default function App() {
     await applyTeamMemberMutation(
       (currentData) =>
         updateTeamMemberData(currentData, playerId, input),
-      { syncRemote: true },
+      { syncRelated: true },
     );
   };
 
   const handleDeleteTeamMember = async (playerId: string) => {
     await applyTeamMemberMutation(
       (currentData) => deleteTeamMemberData(currentData, playerId),
-      { syncRemote: true },
+      { deletedPlayerId: playerId, syncRelated: true },
     );
   };
 
@@ -818,6 +909,10 @@ export default function App() {
   const isMatchListRoute =
     route.name === "matches" ||
     (!hasEditAccess && isProtectedRoute);
+
+  if (route.name === "tmmboxGuide") {
+    return <TmmboxGuide sectionId={route.sectionId} />;
+  }
 
   return (
     <div ref={appScrollRef} className="bg-white relative h-screen min-h-screen w-full overflow-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
@@ -1073,6 +1168,7 @@ export default function App() {
             );
             setShouldRefetch(true);
           }}
+          players={players}
         />
       ) : isMatchRegistrationRoute ? (
         <MatchRegistration
